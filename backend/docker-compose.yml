@@ -1,0 +1,92 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/rails
+      - bundle_cache:/usr/local/bundle
+    environment:
+      - RAILS_ENV=development
+      - RAILS_MASTER_KEY
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/cache_aside_development
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - app_network
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cache_aside_development
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app_network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app_network
+
+  loki:
+    image: grafana/loki:2.9.0
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./observability/loki:/etc/loki
+      - loki_data:/loki
+    command: -config.file=/etc/loki/loki-config.yml
+    networks:
+      - app_network
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - loki
+    networks:
+      - app_network
+
+volumes:
+  postgres_data:
+  redis_data:
+  loki_data:
+  grafana_data:
+  bundle_cache:
+
+networks:
+  app_network:
+    driver: bridge
