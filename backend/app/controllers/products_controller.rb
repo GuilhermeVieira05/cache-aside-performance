@@ -2,17 +2,19 @@ class ProductsController < ApplicationController
   before_action :set_product, only: %i[show update destroy]
 
   def index
-    render json: Product.order(:id)
+    products = CacheService.fetch("products:all") { Product.order(:id).as_json }
+    render json: products
   end
 
   def show
-    render json: @product
+    product = CacheService.fetch("products:#{@product.id}") { @product.as_json }
+    render json: product
   end
 
   def create
     product = Product.new(product_params)
-
     if product.save
+      CacheService.invalidate("products:all")
       render json: product, status: :created
     else
       render_validation_errors(product)
@@ -21,6 +23,7 @@ class ProductsController < ApplicationController
 
   def update
     if @product.update(product_params)
+      CacheService.invalidate("products:all", "products:#{@product.id}")
       render json: @product
     else
       render_validation_errors(@product)
@@ -29,6 +32,7 @@ class ProductsController < ApplicationController
 
   def destroy
     if @product.destroy
+      CacheService.invalidate("products:all", "products:#{@product.id}")
       head :no_content
     else
       render_validation_errors(@product)

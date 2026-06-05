@@ -2,17 +2,19 @@ class CustomersController < ApplicationController
   before_action :set_customer, only: %i[show update destroy]
 
   def index
-    render json: Customer.order(:id)
+    customers = CacheService.fetch("customers:all") { Customer.order(:id).as_json }
+    render json: customers
   end
 
   def show
-    render json: @customer
+    customer = CacheService.fetch("customers:#{@customer.id}") { @customer.as_json }
+    render json: customer
   end
 
   def create
     customer = Customer.new(customer_params)
-
     if customer.save
+      CacheService.invalidate("customers:all")
       render json: customer, status: :created
     else
       render_validation_errors(customer)
@@ -21,6 +23,7 @@ class CustomersController < ApplicationController
 
   def update
     if @customer.update(customer_params)
+      CacheService.invalidate("customers:all", "customers:#{@customer.id}")
       render json: @customer
     else
       render_validation_errors(@customer)
@@ -29,6 +32,7 @@ class CustomersController < ApplicationController
 
   def destroy
     if @customer.destroy
+      CacheService.invalidate("customers:all", "customers:#{@customer.id}")
       head :no_content
     else
       render_validation_errors(@customer)
