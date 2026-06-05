@@ -13,6 +13,7 @@ services:
       - RAILS_MASTER_KEY
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/cache_aside_development
       - REDIS_URL=redis://redis:6379/0
+      - CACHE_ENABLED=true
     depends_on:
       db:
         condition: service_healthy
