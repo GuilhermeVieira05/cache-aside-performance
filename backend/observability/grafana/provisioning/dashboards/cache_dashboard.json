@@ -190,10 +190,122 @@
       ]
     },
     {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Tempo médio de resposta (ms)",
+      "description": "Parsed from 'Completed XXX in Xms'. Compare com cache ON vs OFF para demonstrar o impacto.",
+      "gridPos": { "x": 0, "y": 27, "w": 24, "h": 8 },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": { "mode": "palette-classic" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "red", "value": 500 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "avg_over_time({job=\"rails\"} | regexp `Completed \\d+ \\w+ in (?P<duration>\\d+)ms` | unwrap duration [1m])",
+          "legendFormat": "Tempo médio (ms)"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Consultas ao banco de dados (ActiveRecord)",
+      "description": "Cada linha conta uma requisição que gerou query no banco. Cache hits não aparecem aqui.",
+      "gridPos": { "x": 0, "y": 35, "w": 12, "h": 7 },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "purple", "mode": "fixed" },
+          "unit": "short"
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum(count_over_time({job=\"rails\"} |= \"ActiveRecord:\" !~ \"ActiveRecord: 0\" [1m]))",
+          "legendFormat": "Queries no banco"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Total de queries no banco",
+      "gridPos": { "x": 12, "y": 35, "w": 6, "h": 7 },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["sum"] }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "purple", "mode": "fixed" },
+          "unit": "short"
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum(count_over_time({job=\"rails\"} |= \"ActiveRecord:\" !~ \"ActiveRecord: 0\" [1h]))",
+          "legendFormat": "Queries"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Tempo médio de resposta",
+      "gridPos": { "x": 18, "y": 35, "w": 6, "h": 7 },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["mean"] }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "red", "value": 500 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "avg_over_time({job=\"rails\"} | regexp `Completed \\d+ \\w+ in (?P<duration>\\d+)ms` | unwrap duration [1h])",
+          "legendFormat": "Avg response"
+        }
+      ]
+    },
+    {
       "id": 8,
       "type": "logs",
       "title": "Logs de Cache em tempo real",
-      "gridPos": { "x": 0, "y": 19, "w": 24, "h": 8 },
+      "gridPos": { "x": 0, "y": 42, "w": 24, "h": 8 },
       "options": {
         "showTime": true,
         "showLabels": false,
