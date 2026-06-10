@@ -1,0 +1,158 @@
+<h2>Preview do novo design — Clean Blueprint</h2>
+<p class="subtitle">Arquitetura com diagrama + exemplo de slide de resultados. Aprovando aqui, implemento tudo.</p>
+
+<div style="display:flex; flex-direction:column; gap:24px; margin-top:16px;">
+
+  <!-- SLIDE 3 PREVIEW: Architecture -->
+  <div>
+    <div class="label" style="margin-bottom:8px;">Slide 3 — Arquitetura (diagrama substituindo o texto ASCII)</div>
+    <div class="mockup">
+      <div class="mockup-header">Slide 3 · Arquitetura da Solução</div>
+      <div class="mockup-body" style="background:#fff; padding:28px 36px; font-family:'Segoe UI',sans-serif; min-height:340px;">
+
+        <!-- slide header -->
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:20px; border-bottom:3px solid #3b82f6; padding-bottom:10px;">
+          <div style="width:36px; height:36px; background:#eff6ff; border:2px solid #3b82f6; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:18px;">🏗️</div>
+          <div>
+            <div style="font-size:20px; font-weight:700; color:#1e40af;">Arquitetura da Solução</div>
+            <div style="font-size:11px; color:#64748b; letter-spacing:.5px; text-transform:uppercase;">Cache-Aside Pattern · Rails + Redis + PostgreSQL</div>
+          </div>
+          <div style="margin-left:auto; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:4px 10px; font-size:11px; color:#15803d; font-weight:600;">CACHE_ENABLED=true|false</div>
+        </div>
+
+        <!-- diagram -->
+        <div style="display:flex; flex-direction:column; align-items:center; gap:0;">
+
+          <!-- Client -->
+          <div style="background:#1e40af; color:#fff; border-radius:8px; padding:8px 28px; font-size:13px; font-weight:600; letter-spacing:.3px; box-shadow:0 2px 8px rgba(30,64,175,.3);">
+            🌐 Cliente HTTP
+          </div>
+          <div style="width:2px; height:18px; background:#cbd5e1;"></div>
+
+          <!-- Rails box -->
+          <div style="border:2px solid #3b82f6; border-radius:10px; padding:14px 24px; background:#f8fafc; width:100%; max-width:520px; position:relative;">
+            <div style="position:absolute; top:-10px; left:16px; background:#3b82f6; color:#fff; font-size:10px; font-weight:700; padding:2px 10px; border-radius:4px; letter-spacing:.5px;">RAILS 7.2 API-ONLY</div>
+
+            <!-- CacheService inner box -->
+            <div style="border:1.5px dashed #7c3aed; border-radius:7px; padding:10px 16px; background:#faf5ff; margin-bottom:12px;">
+              <div style="font-size:11px; font-weight:700; color:#7c3aed; text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px;">CacheService</div>
+              <div style="display:flex; gap:10px; font-size:12px; color:#374151;">
+                <span style="background:#ede9fe; padding:2px 8px; border-radius:4px; color:#6d28d9;">fetch(key) { … }</span>
+                <span style="background:#ede9fe; padding:2px 8px; border-radius:4px; color:#6d28d9;">invalidate(*keys)</span>
+                <span style="background:#ede9fe; padding:2px 8px; border-radius:4px; color:#6d28d9;">enabled?</span>
+              </div>
+            </div>
+
+            <!-- arrows to Redis and PG -->
+            <div style="display:flex; justify-content:space-around; align-items:flex-start; gap:12px;">
+              <div style="display:flex; flex-direction:column; align-items:center; flex:1;">
+                <div style="font-size:10px; color:#15803d; font-weight:700; background:#dcfce7; padding:2px 8px; border-radius:4px; margin-bottom:4px;">HIT → resposta imediata</div>
+                <div style="width:2px; height:14px; background:#86efac;"></div>
+                <div style="background:#dcfce7; border:2px solid #16a34a; border-radius:8px; padding:8px 20px; font-size:13px; font-weight:600; color:#15803d; text-align:center;">
+                  ⚡ Redis 7<br><span style="font-size:10px; font-weight:400; color:#4ade80;">cache em memória</span>
+                </div>
+              </div>
+              <div style="display:flex; flex-direction:column; align-items:center; flex:1;">
+                <div style="font-size:10px; color:#b45309; font-weight:700; background:#fef3c7; padding:2px 8px; border-radius:4px; margin-bottom:4px;">MISS → consulta + grava cache</div>
+                <div style="width:2px; height:14px; background:#fcd34d;"></div>
+                <div style="background:#fefce8; border:2px solid #ca8a04; border-radius:8px; padding:8px 20px; font-size:13px; font-weight:600; color:#92400e; text-align:center;">
+                  🗄️ PostgreSQL 16<br><span style="font-size:10px; font-weight:400; color:#d97706;">fonte da verdade</span>
+                </div>
+              </div>
+              <div style="display:flex; flex-direction:column; align-items:center; flex:1;">
+                <div style="font-size:10px; color:#1d4ed8; font-weight:700; background:#dbeafe; padding:2px 8px; border-radius:4px; margin-bottom:4px;">GET /stats</div>
+                <div style="width:2px; height:14px; background:#93c5fd;"></div>
+                <div style="background:#eff6ff; border:2px solid #3b82f6; border-radius:8px; padding:8px 16px; font-size:12px; font-weight:600; color:#1d4ed8; text-align:center;">
+                  📊 CacheStats<br><span style="font-size:10px; font-weight:400; color:#60a5fa;">hits · misses</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="width:2px; height:14px; background:#cbd5e1;"></div>
+
+          <!-- Observability bar -->
+          <div style="display:flex; align-items:center; gap:8px; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:8px; padding:8px 18px; font-size:12px; color:#475569; width:100%; max-width:520px; justify-content:center;">
+            <span style="font-weight:600; color:#334155;">Rails logs</span>
+            <span style="color:#94a3b8;">→</span>
+            <span>Promtail</span>
+            <span style="color:#94a3b8;">→</span>
+            <span>Loki</span>
+            <span style="color:#94a3b8;">→</span>
+            <span style="font-weight:600; color:#7c3aed;">Grafana :3001</span>
+            <span style="margin-left:12px; color:#94a3b8;">|</span>
+            <span style="font-weight:600; color:#1d4ed8;">k6 Report :8080</span>
+          </div>
+        </div>
+
+        <!-- footer gradient bar -->
+        <div style="height:3px; background:linear-gradient(90deg,#3b82f6,#7c3aed); border-radius:2px; margin-top:18px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE 5 PREVIEW: Results / Latency -->
+  <div>
+    <div class="label" style="margin-bottom:8px;">Slide 5 — Resultados: Latência (layout com destaque de métricas)</div>
+    <div class="mockup">
+      <div class="mockup-header">Slide 5 · Resultados: Latência</div>
+      <div class="mockup-body" style="background:#fff; padding:28px 36px; font-family:'Segoe UI',sans-serif; min-height:300px;">
+
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:18px; border-bottom:3px solid #3b82f6; padding-bottom:10px;">
+          <div style="width:36px; height:36px; background:#eff6ff; border:2px solid #3b82f6; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:18px;">⏱️</div>
+          <div style="font-size:20px; font-weight:700; color:#1e40af;">Resultados: Latência</div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:start;">
+          <!-- table side -->
+          <div>
+            <table style="width:100%; border-collapse:collapse; font-size:13px;">
+              <tr>
+                <th style="background:#1e40af; color:#fff; padding:7px 10px; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.5px; border-radius:4px 0 0 0;">Métrica</th>
+                <th style="background:#1e40af; color:#fff; padding:7px 10px; text-align:center; font-size:11px; text-transform:uppercase; letter-spacing:.5px;">Sem cache</th>
+                <th style="background:#7c3aed; color:#fff; padding:7px 10px; text-align:center; font-size:11px; text-transform:uppercase; letter-spacing:.5px; border-radius:0 4px 0 0;">Com cache</th>
+              </tr>
+              <tr style="background:#f8fafc;">
+                <td style="padding:6px 10px; border:1px solid #e2e8f0; color:#374151; font-weight:600;">Média</td>
+                <td style="padding:6px 10px; border:1px solid #e2e8f0; text-align:center; color:#dc2626;">12.379 ms</td>
+                <td style="padding:6px 10px; border:1px solid #e2e8f0; text-align:center; color:#15803d; font-weight:600; background:#f0fdf4;">5.471 ms</td>
+              </tr>
+              <tr>
+                <td style="padding:6px 10px; border:1px solid #e2e8f0; color:#374151; font-weight:600;">p90</td>
+                <td style="padding:6px 10px; border:1px solid #e2e8f0; text-align:center; color:#dc2626;">16.686 ms</td>
+                <td style="padding:6px 10px; border:1px solid #e2e8f0; text-align:center; color:#15803d; font-weight:600; background:#f0fdf4;">7.461 ms</td>
+              </tr>
+              <tr style="background:#f8fafc;">
+                <td style="padding:6px 10px; border:1px solid #e2e8f0; color:#374151; font-weight:600;">p99</td>
+                <td style="padding:6px 10px; border:1px solid #e2e8f0; text-align:center; color:#dc2626;">17.889 ms</td>
+                <td style="padding:6px 10px; border:1px solid #e2e8f0; text-align:center; color:#15803d; font-weight:600; background:#f0fdf4;">8.170 ms</td>
+              </tr>
+            </table>
+          </div>
+          <!-- metric highlight cards -->
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            <div style="background:linear-gradient(135deg,#1e40af,#3b82f6); border-radius:10px; padding:14px 18px; color:#fff; text-align:center; box-shadow:0 3px 12px rgba(30,64,175,.25);">
+              <div style="font-size:32px; font-weight:800; letter-spacing:-1px;">~55%</div>
+              <div style="font-size:12px; opacity:.85; margin-top:2px;">redução de latência em todos os percentis</div>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+              <div style="background:#f0fdf4; border:2px solid #16a34a; border-radius:8px; padding:10px; text-align:center;">
+                <div style="font-size:20px; font-weight:700; color:#15803d;">5.47 ms</div>
+                <div style="font-size:10px; color:#4ade80;">média com cache</div>
+              </div>
+              <div style="background:#fff1f2; border:2px solid #f87171; border-radius:8px; padding:10px; text-align:center;">
+                <div style="font-size:20px; font-weight:700; color:#dc2626;">12.38 ms</div>
+                <div style="font-size:10px; color:#fca5a5;">média sem cache</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="height:3px; background:linear-gradient(90deg,#3b82f6,#7c3aed); border-radius:2px; margin-top:18px;"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:20px;">Gostou dessa direção? Diga "aprovar" e implemento todos os 9 slides. Ou peça ajustes pontuais.</p>

@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cache Aside e Performance de APIs · PUC Minas</title>
+<style>
+:root{
+  --puc-blue:#003554;--puc-blue2:#005082;--puc-grey:#5D6770;--puc-red:#86001B;
+  --puc-bg:#F4F4F4;--white:#FFFFFF;
+  --ok:#27ae60;--warn:#f39c12;--info:#2980b9;--tri:#8E44AD;
+  --redis:#16a34a;--pg:#b45309;--cache:#2980b9;
+  --code-bg:#0d1117;--code-bd:#30363d;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Segoe UI','Open Sans',Arial,sans-serif;color:#333;background:#e5e7eb;}
+.deck{display:flex;flex-direction:column;align-items:center;gap:26px;padding:26px;}
+.slide{width:1280px;height:720px;background:var(--white);position:relative;overflow:hidden;box-shadow:0 6px 26px rgba(0,0,0,.18);display:flex;flex-direction:column;}
+/* header band */
+.sld-hdr{height:44px;flex-shrink:0;background:var(--puc-blue);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 30px;border-bottom:3px solid var(--puc-red);}
+.sld-hdr .logo{font-weight:700;font-size:.96rem;letter-spacing:.3px;}
+.sld-hdr .logo span{font-weight:300;opacity:.82;border-left:1px solid rgba(255,255,255,.32);padding-left:13px;margin-left:13px;font-size:.8rem;}
+.sld-hdr .pg{font-size:.76rem;opacity:.72;text-transform:uppercase;letter-spacing:1px;}
+.sld-body{flex:1;padding:26px 46px;overflow:hidden;display:flex;flex-direction:column;}
+/* typography */
+h1{color:var(--puc-blue);font-size:2.5rem;font-weight:300;border-left:6px solid var(--puc-red);padding-left:26px;line-height:1.14;margin-bottom:18px;}
+h2{color:var(--puc-blue);font-size:1.62rem;font-weight:700;margin-bottom:16px;position:relative;padding-bottom:9px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+h2::after{content:"";position:absolute;bottom:0;left:0;width:46px;height:4px;background:var(--puc-red);}
+h2 .t{flex:1;min-width:200px;}
+h3{color:var(--puc-grey);font-size:.92rem;font-weight:700;text-transform:uppercase;letter-spacing:.9px;margin-bottom:8px;}
+h4{color:var(--puc-blue);font-size:.95rem;font-weight:700;margin-bottom:5px;}
+p,li{font-size:.97rem;line-height:1.5;color:#444;margin-bottom:6px;}
+ul{list-style:none;padding-left:.4em;}
+li::before{content:"•";color:var(--puc-red);font-weight:700;display:inline-block;width:1em;margin-left:-.5em;}
+strong{color:var(--puc-blue);}
+em{color:var(--puc-grey);}
+code{font-family:'Consolas','JetBrains Mono',monospace;background:#eef0f2;color:#c0392b;padding:1px 5px;border-radius:3px;font-size:.85em;}
+.citation{font-size:.72rem;color:var(--puc-grey);font-style:italic;margin-top:auto;padding-top:9px;border-top:1px solid #eee;line-height:1.45;}
+/* badges */
+.badge{display:inline-block;padding:3px 13px;border-radius:20px;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#fff;}
+.b-1{background:var(--puc-red);}
+.b-2{background:var(--info);}
+.b-3{background:var(--ok);}
+.b-4{background:var(--tri);}
+/* layout */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+.grid-2w{display:grid;grid-template-columns:3fr 2fr;gap:18px;}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
+/* cards */
+.card{background:#fff;border:1px solid #e0e0e0;border-left:5px solid var(--puc-blue);padding:14px 16px;border-radius:6px;box-shadow:0 2px 7px rgba(0,0,0,.05);}
+.card.green{border-left-color:var(--ok);background:#f0fff4;}
+.card.blue{border-left-color:var(--info);background:#f0f8ff;}
+.card.warn{border-left-color:var(--warn);background:#fffbf0;}
+.card.red{border-left-color:var(--puc-red);background:#fff9f9;}
+.card.dark{border-left-color:var(--puc-grey);background:#f8f9fa;}
+.card.purple{border-left-color:var(--tri);background:#f8f5ff;}
+/* boxes */
+.note-box{background:#e8f5e9;border-left:5px solid var(--ok);padding:11px 15px;border-radius:4px;}
+.note-box h4{color:#1e7e34;}
+.warn-box{background:#fff8e1;border-left:5px solid var(--warn);padding:11px 15px;border-radius:4px;}
+.warn-box h4{color:#b7770d;}
+.tip-box{background:#e3f2fd;border-left:5px solid var(--info);padding:11px 15px;border-radius:4px;}
+.tip-box h4{color:#1565c0;}
+.danger-box{background:#fdedec;border-left:5px solid var(--puc-red);padding:11px 15px;border-radius:4px;}
+.danger-box h4{color:var(--puc-red);}
+.quote-box{background:#eef;border-left:5px solid var(--puc-red);padding:13px 18px;font-style:italic;color:#555;border-radius:4px;}
+/* tables */
+.cmp-table{width:100%;border-collapse:collapse;background:#fff;box-shadow:0 2px 7px rgba(0,0,0,.06);font-size:.86rem;}
+.cmp-table th{background:var(--puc-blue);color:#fff;padding:8px 12px;text-align:left;font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.4px;}
+.cmp-table td{padding:7px 12px;border-bottom:1px solid #e8e8e8;}
+.cmp-table tr:last-child td{border-bottom:none;}
+.cmp-table td:first-child{font-weight:600;color:#333;}
+.cmp-table tr:nth-child(even) td{background:#f8f9fa;}
+.cell-good{color:#1e7e34;font-weight:700;}
+.cell-bad{color:#922b21;font-weight:700;}
+.cell-mid{color:#b7770d;font-weight:700;}
+/* code panel */
+.code{background:var(--code-bg);border:1px solid var(--code-bd);border-radius:8px;padding:12px 16px;font-family:'Consolas','JetBrains Mono',monospace;font-size:.8rem;line-height:1.5;color:#c9d1d9;overflow:hidden;}
+.code .cm{color:#8b949e;}
+.code .kw{color:#ff7b72;}
+.code .st{color:#a5d6ff;}
+.code .fn{color:#d2a8ff;}
+.code .nb{color:#79c0ff;}
+.code .hit{color:#7ee787;}
+.code .miss{color:#f0c674;}
+.code .inv{color:#ffa657;}
+.code-cap{font-size:.78rem;color:var(--puc-grey);font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:.6px;}
+/* metric hero */
+.hero{background:linear-gradient(135deg,var(--puc-blue),var(--puc-blue2));border-radius:12px;padding:18px;color:#fff;text-align:center;box-shadow:0 5px 18px rgba(0,53,84,.3);}
+.hero .num{font-size:3rem;font-weight:800;letter-spacing:-2px;line-height:1;}
+.hero .lbl{font-size:.82rem;opacity:.86;margin-top:6px;}
+.mini2{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:11px;}
+.mc{border-radius:8px;padding:11px;text-align:center;border:2px solid;}
+.mc .n{font-size:1.35rem;font-weight:800;}
+.mc .l{font-size:.72rem;margin-top:2px;color:#555;}
+.mc.g{background:#f0fff4;border-color:var(--ok);}
+.mc.g .n{color:#1e7e34;}
+.mc.r{background:#fff5f5;border-color:#e74c3c;}
+.mc.r .n{color:#c0392b;}
+/* map tiles (cover) */
+.m-map{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:20px;}
+.m-tile{padding:14px 10px;border-radius:9px;color:#fff;text-align:center;font-weight:700;font-size:.9rem;}
+.m-tile small{display:block;font-weight:400;font-size:.72rem;opacity:.88;margin-top:5px;}
+.stack{display:flex;flex-direction:column;gap:11px;}
+.tagrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
+.pill{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);border-radius:14px;padding:3px 13px;font-size:.78rem;color:#dbe6ef;}
+/* cover */
+.cover .sld-body{background:linear-gradient(135deg,#002233 0%,#003554 55%,#004a73 100%);justify-content:center;}
+.cover h1{color:#fff;border-color:var(--puc-red);}
+.cover h3{color:var(--puc-red);}
+/* print → PDF */
+@media print{
+  @page{size:1280px 720px;margin:0;}
+  body{background:#fff;}
+  .deck{gap:0;padding:0;}
+  .slide{box-shadow:none;page-break-after:always;break-after:page;}
+  .slide:last-child{page-break-after:auto;}
+}
+</style>
+</head>
+<body>
+<div class="deck">
+
+<!-- ░░░ CAPA ░░░ -->
+<section class="slide cover">
+  <div class="sld-hdr"><div class="logo">PUC Minas <span>ICEI — Arquitetura de Software</span></div><div class="pg">5º período · 2026/1</div></div>
+  <div class="sld-body">
+    <h3>Engenharia de Software · Trabalho Prático</h3>
+    <h1>Cache Aside e<br>Performance de APIs<br>
+      <span style="font-size:1.15rem;color:#7dd3fc;font-weight:400;">Reduzindo latência e carga no banco com Redis</span>
+    </h1>
+    <div style="margin-top:14px;border-left:5px solid var(--puc-red);padding-left:22px;">
+      <p style="font-size:1.05rem;color:#cbd5e1;margin-bottom:3px;">Demonstração prática do padrão <strong style="color:#fff;">Cache Aside</strong> com benchmark comparativo</p>
+      <p style="font-size:.9rem;color:#93a9bd;">Medição com 200 usuários virtuais · dois cenários isolados</p>
+    </div>
+    <div class="tagrow" style="margin-top:22px;">
+      <span class="pill">Rails 7.2</span><span class="pill">PostgreSQL 16</span><span class="pill">Redis 7</span>
+      <span class="pill">Docker Compose</span><span class="pill">k6</span><span class="pill">Grafana · Loki</span>
+    </div>
+  </div>
+</section>
+
+<!-- ░░░ S1 PROBLEMA ░░░ -->
+<section class="slide">
+  <div class="sld-hdr"><div class="logo">PUC Minas <span>Arquitetura de Software</span></div><div class="pg">Slide 1 · O Problema</div></div>
+  <div class="sld-body">
+    <h2><span class="badge b-1">I. Problema</span><span class="t">Consultas repetitivas sobrecarregam o banco</span></h2>
+    <div class="grid-2" style="margin-top:4px;">
+      <div class="stack">
+        <p>API acadêmica de catálogo (clientes, produtos, pedidos) com perfil <strong>read-heavy</strong>: muitas leituras, poucas escritas.</p>
+        <div class="card red">
+          <h4>Sintomas sob carga</h4>
+          <ul style="font-size:.9rem;">
+            <li>Toda leitura vai direto ao PostgreSQL — sem atalho</li>
+            <li>Dados de catálogo mudam pouco, mas são lidos com altíssima frequência</li>
+            <li>O banco vira gargalo: a latência dispara e o throughput despenca</li>
+            <li>Recursos do banco desperdiçados em consultas idênticas</li>
+          </ul>
+        </div>
+      </div>
+      <div class="stack">
+        <div style="background:linear-gradient(135deg,var(--puc-blue),var(--puc-blue2));border-radius:11px;padding:18px 20px;color:#fff;">
+          <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:#7dd3fc;margin-bottom:8px;">✦ Solução proposta</div>
+          <div style="font-size:1.7rem;font-weight:800;margin-bottom:8px;">Padrão Cache Aside</div>
+          <p style="color:#dbe6ef;font-size:.92rem;">Uma camada de cache com <strong style="color:#fff;">Redis</strong> entre a API e o banco. Nos acertos (HIT), a resposta sai da memória — o banco nem é tocado.</p>
+        </div>
+        <div class="grid-3" style="gap:10px;">
+          <div class="card green" style="text-align:center;padding:10px;"><div style="font-size:1.1rem;font-weight:800;color:#1e7e34;">↓ Latência</div></div>
+          <div class="card blue" style="text-align:center;padding:10px;"><div style="font-size:1.1rem;font-weight:800;color:#1565c0;">↑ Throughput</div></div>
+          <div class="card purple" style="text-align:center;padding:10px;"><div style="font-size:1.1rem;font-weight:800;color:var(--tri);">↓ Carga DB</div></div>
+        </div>
+      </div>
+    </div>
+    <span class="citation">Cache-Aside (Lazy Loading): MICROSOFT. Cloud Design Patterns — Cache-Aside. learn.microsoft.com/azure/architecture/patterns/cache-aside. | NISHTALA, R. et al. Scaling Memcache at Facebook. <em>USENIX NSDI '13</em>.</span>
+  </div>
+</section>
+
+<!-- ░░░ S2 PADRÃO ░░░ -->
+<section class="slide">
+  <div class="sld-hdr"><div class="logo">PUC Minas <span>Arquitetura de Software</span></div><div class="pg">Slide 2 · O Padrão</div></div>
+  <div class="sld-body">
+    <h2><span class="badge b-1">I. Problema</span><span class="t">O padrão Cache Aside: leitura e escrita</span></h2>
+    <div class="grid-2" style="margin-top:4px;">
+      <div class="card green">
+        <h4 style="color:#1e7e34;">📖 LEITURA</h4>
+        <ol style="list-style:none;padding:0;margin-top:6px;">
+          <li style="margin-bottom:7px;">1. Consulta o <strong style="color:#1e7e34;">Redis</strong></li>
+        </ol>
+        <div class="grid-2" style="gap:9px;">
+          <div style="background:#dcfce7;border-radius:6px;padding:9px;text-align:center;">
+            <div style="font-weight:800;color:#15803d;">HIT ✓</div>
+            <div style="font-size:.82rem;color:#444;margin-top:3px;">retorna direto<br><em style="font-size:.75rem;">banco não é tocado</em></div>
+          </div>
+          <div style="background:#fef9c3;border-radius:6px;padding:9px;text-align:center;">
+            <div style="font-weight:800;color:#ca8a04;">MISS</div>
+            <div style="font-size:.82rem;color:#444;margin-top:3px;">consulta o banco<br><em style="font-size:.75rem;">grava no Redis e retorna</em></div>
+          </div>
+        </div>
+      </div>
+      <div class="card red">
+        <h4 style="color:var(--puc-red);">✏️ ESCRITA <span style="font-weight:400;font-size:.8rem;color:#666;">(create / update / delete)</span></h4>
+        <ol style="list-style:none;padding:0;margin-top:6px;">
+          <li style="margin-bottom:7px;">1. Persiste no <strong style="color:var(--puc-red);">banco</strong></li>
+          <li style="margin-bottom:7px;">2. <strong style="color:var(--puc-red);">Invalida</strong> a chave no Redis (apaga)</li>
+          <li style="background:#fdedec;border-radius:6px;padding:8px 10px;font-size:.85rem;">→ a próxima leitura vai ao banco e <strong style="color:var(--puc-red);">renova</strong> o cache</li>
+        </ol>
+      </div>
+    </div>
+    <div class="tip-box" style="margin-top:16px;">
+      <h4>Por que cache-aside e não write-through?</h4>
+      <p style="font-size:.9rem;">A aplicação controla o cache explicitamente — sem biblioteca opaca, sem sincronização implícita. <strong>Invalidar é mais simples e seguro do que atualizar</strong>: elimina a janela de inconsistência, sem precisar garantir atomicidade na re-serialização do objeto.</p>
+    </div>
+    <span class="citation">FOWLER, M. Patterns of Enterprise Application Architecture. Addison-Wesley, 2002 (cap. Caching). | Write-through vs Cache-aside: MICROSOFT Cloud Design Patterns, 2024.</span>
+  </div>
+</section>
+
+<!-- ░░░ S3 ARQUITETURA (DIAGRAMA VISUAL SVG) ░░░ -->
+<section class="slide">
+  <div class="sld-hdr"><div class="logo">PUC Minas <span>Arquitetura de Software</span></div><div class="pg">Slide 3 · Arquitetura</div></div>
+  <div class="sld-body">
+    <h2><span class="badge b-2">II. Arquitetura</span><span class="t">Arquitetura da solução</span>
+      <span style="margin-left:auto;background:#e8f5e9;border:1px solid #a7d7af;border-radius:6px;padding:3px 11px;font-size:.72rem;color:#1e7e34;font-weight:700;">CACHE_ENABLED=true|false</span>
+    </h2>
+    <div style="display:flex;gap:24px;align-items:stretch;flex:1;">
+      <!-- diagrama -->
+      <div style="flex:1.55;background:#f8f9fa;border:1px solid #dee2e6;border-radius:10px;padding:10px;">
+        <svg viewBox="0 0 560 430" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;">
+          <defs>
+            <marker id="ag" markerWidth="7" markerHeight="7" refX="3.5" refY="3.5" orient="auto"><path d="M0,0 L0,7 L7,3.5 z" fill="#5D6770"/></marker>
+            <marker id="agG" markerWidth="7" markerHeight="7" refX="3.5" refY="3.5" orient="auto"><path d="M0,0 L0,7 L7,3.5 z" fill="#16a34a"/></marker>
+            <marker id="agA" markerWidth="7" markerHeight="7" refX="3.5" refY="3.5" orient="auto"><path d="M0,0 L0,7 L7,3.5 z" fill="#b45309"/></marker>
+          </defs>
+
+          <!-- Cliente -->
+          <rect x="200" y="8" width="160" height="38" rx="8" fill="#003554"/>
+          <text x="280" y="26" text-anchor="middle" fill="#fff" font-size="13" font-weight="bold">🌐 Cliente HTTP</text>
+          <text x="280" y="40" text-anchor="middle" fill="#7dd3fc" font-size="9">GET · POST · PUT · DELETE</text>
+          <line x1="280" y1="46" x2="280" y2="66" stroke="#5D6770" stroke-width="2" marker-end="url(#ag)"/>
+
+          <!-- Rails box -->
+          <rect x="40" y="70" width="480" height="118" rx="11" fill="#eef3f7" stroke="#2980b9" stroke-width="2"/>
+          <rect x="54" y="62" width="150" height="18" rx="4" fill="#2980b9"/>
+          <text x="129" y="75" text-anchor="middle" fill="#fff" font-size="10" font-weight="bold">RAILS 7.2 · API-ONLY</text>
+          <!-- controllers -->
+          <rect x="58" y="92" width="135" height="30" rx="5" fill="#dbe7f3"/>
+          <text x="125" y="110" text-anchor="middle" fill="#1a4d73" font-size="9.5" font-weight="bold">CustomersController</text>
+          <rect x="213" y="92" width="135" height="30" rx="5" fill="#dbe7f3"/>
+          <text x="280" y="110" text-anchor="middle" fill="#1a4d73" font-size="9.5" font-weight="bold">ProductsController</text>
+          <rect x="368" y="92" width="135" height="30" rx="5" fill="#dbe7f3"/>
+          <text x="435" y="110" text-anchor="middle" fill="#1a4d73" font-size="9.5" font-weight="bold">OrdersController</text>
+          <!-- CacheService -->
+          <rect x="120" y="134" width="320" height="42" rx="8" fill="#f3ecfb" stroke="#8E44AD" stroke-width="1.6" stroke-dasharray="5,3"/>
+          <text x="280" y="151" text-anchor="middle" fill="#8E44AD" font-size="12" font-weight="bold">CacheService</text>
+          <text x="280" y="167" text-anchor="middle" fill="#7d5ba6" font-size="8.5" font-family="monospace">entrada única do cache · decide HIT / MISS / invalidação</text>
+
+          <!-- arrows out -->
+          <path d="M 175 188 L 130 232" stroke="#16a34a" stroke-width="2" fill="none" marker-end="url(#agG)"/>
+          <rect x="120" y="200" width="58" height="17" rx="8" fill="#dcfce7"/>
+          <text x="149" y="212" text-anchor="middle" fill="#15803d" font-size="9" font-weight="bold">HIT</text>
+          <path d="M 385 188 L 430 232" stroke="#b45309" stroke-width="2" fill="none" marker-end="url(#agA)"/>
+          <rect x="382" y="200" width="62" height="17" rx="8" fill="#fef3c7"/>
+          <text x="413" y="212" text-anchor="middle" fill="#92400e" font-size="9" font-weight="bold">MISS</text>
+
+          <!-- Redis (fora) -->
+          <rect x="40" y="238" width="210" height="86" rx="10" fill="#f0fff4" stroke="#16a34a" stroke-width="2"/>
+          <text x="145" y="262" text-anchor="middle" font-size="20">⚡</text>
+          <text x="145" y="284" text-anchor="middle" fill="#15803d" font-size="14" font-weight="bold">Redis 7</text>
+          <text x="145" y="300" text-anchor="middle" fill="#3a9d54" font-size="9">cache em memória</text>
+          <text x="145" y="315" text-anchor="middle" fill="#555" font-size="8.5">resposta imediata · banco não tocado</text>
+          <text x="145" y="232" text-anchor="middle" fill="#15803d" font-size="8" font-weight="bold">⟵ FORA DO RAILS (serviço externo)</text>
+
+          <!-- PostgreSQL (fora) -->
+          <rect x="310" y="238" width="210" height="86" rx="10" fill="#fffdf2" stroke="#b45309" stroke-width="2"/>
+          <text x="415" y="262" text-anchor="middle" font-size="20">🗄️</text>
+          <text x="415" y="284" text-anchor="middle" fill="#92400e" font-size="14" font-weight="bold">PostgreSQL 16</text>
+          <text x="415" y="300" text-anchor="middle" fill="#b06d12" font-size="9">fonte da verdade</text>
+          <text x="415" y="315" text-anchor="middle" fill="#555" font-size="8.5">busca dados → grava no Redis → responde</text>
+          <text x="415" y="232" text-anchor="middle" fill="#92400e" font-size="8" font-weight="bold">FORA DO RAILS (serviço externo) ⟶</text>
+
+          <!-- Observabilidade -->
+          <rect x="40" y="346" width="480" height="34" rx="7" fill="#1a1a2e"/>
+          <text x="56" y="367" fill="#8b949e" font-size="9.5">Rails logs <tspan fill="#5D6770">→</tspan> Promtail <tspan fill="#5D6770">→</tspan> Loki <tspan fill="#5D6770">→</tspan> <tspan fill="#c4b5fd" font-weight="bold">Grafana :3001</tspan></text>
+          <text x="504" y="367" text-anchor="end" fill="#7dd3fc" font-size="9.5" font-weight="bold">Relatório k6 :8080</text>
+          <text x="280" y="398" text-anchor="middle" fill="#8b949e" font-size="9" font-style="italic">Observabilidade: HIT / MISS / INVALIDATE rastreados nos logs</text>
+        </svg>
+      </div>
+      <!-- texto lateral -->
+      <div class="stack" style="flex:1;">
+        <div class="card blue">
+          <h4>Fluxo em uma frase</h4>
+          <p style="font-size:.86rem;">O controller chama o <strong>CacheService</strong>; no <strong style="color:#15803d;">HIT</strong> a resposta vem do Redis; no <strong style="color:#b45309;">MISS</strong> consulta o PostgreSQL, grava no Redis e responde.</p>
+        </div>
+        <div class="card dark">
+          <h4>Chaves de cache</h4>
+          <ul style="font-size:.82rem;">
+            <li><code>customers:all</code> · <code>customers:&lt;id&gt;</code></li>
+            <li><code>products:all</code> · <code>products:&lt;id&gt;</code></li>
+            <li><code>orders:all</code> · <code>orders:&lt;id&gt;</code></li>
+          </ul>
+        </div>
+        <div class="note-box">
+          <h4>Mesma imagem, dois cenários</h4>
+          <p style="font-size:.84rem;">A flag <code>CACHE_ENABLED</code> liga/desliga o cache sem rebuild — baseline vs tratamento.</p>
+        </div>
+      </div>
+    </div>
+    <span class="citation">Stack: Rails 7.2 · PostgreSQL 16 · Redis 7 · Docker Compose · k6 · Grafana/Loki. | Observabilidade via parsing de log: <code>[CACHE HIT]</code> / <code>[CACHE MISS]</code> / <code>[CACHE INVALIDATE]</code>.</span>
+  </div>
+</section>
+
+<!-- ░░░ S5 METODOLOGIA ░░░ -->
+<section class="slide">
+  <div class="sld-hdr"><div class="logo">PUC Minas <span>Arquitetura de Software</span></div><div class="pg">Slide 4 · Metodologia</div></div>
+  <div class="sld-body">
+    <h2><span class="badge b-3">III. Resultados</span><span class="t">Metodologia dos testes</span></h2>
+    <p style="margin-bottom:10px;"><strong>Ferramenta:</strong> k6 (Grafana) — teste de carga com 200 usuários virtuais simultâneos · 40 req/s · ~220 s de duração.</p>
+    <div class="grid-2">
+      <div>
+        <h3>Jornada simulada por usuário</h3>
+        <table class="cmp-table">
+          <thead><tr><th>Etapa</th><th>Requisição</th><th>Detalhe</th></tr></thead>
+          <tbody>
+            <tr><td>Catálogo</td><td><code>GET /products</code></td><td>Lista todos os produtos</td></tr>
+            <tr><td>Produto</td><td><code>GET /products/:id</code></td><td>Detalha 1–2 produtos</td></tr>
+            <tr><td>Pedidos</td><td><code>GET /orders</code></td><td>JOIN pesado (pedidos + itens)</td></tr>
+            <tr><td>Compra</td><td><code>POST /orders</code> <em>(25%)</em></td><td>Cria pedido → invalida cache</td></tr>
+          </tbody>
+        </table>
+        <div class="card dark" style="margin-top:12px;">
+          <h4>Dataset (mesma seed nos dois cenários)</h4>
+          <p style="font-size:.9rem;">300 clientes · 500 produtos · 2.000 pedidos. Cache zerado (<code>FLUSHALL</code>) antes de cada run.</p>
+        </div>
+      </div>
+      <div class="stack">
+        <h3>Dois cenários isolados</h3>
+        <div class="card red">
+          <h4 style="color:var(--puc-red);">🔴 Baseline — cache-off</h4>
+          <p style="font-size:.9rem;"><code>CACHE_ENABLED=false</code><br>Toda requisição vai direto ao banco.</p>
+        </div>
+        <div class="card green">
+          <h4 style="color:#1e7e34;">🟢 Tratamento — cache-on</h4>
+          <p style="font-size:.9rem;"><code>CACHE_ENABLED=true</code><br>Padrão cache-aside ativo · Redis zerado antes do run.</p>
+        </div>
+        <div class="tip-box"><p style="font-size:.86rem;">Condições idênticas entre cenários — a <strong>única variável</strong> é a presença do cache. Isso isola o efeito medido.</p></div>
+      </div>
+    </div>
+    <span class="citation">k6: grafana.com/oss/k6 — teste de carga baseado em VUs (virtual users). Ramp-up progressivo até 200 VUs. Taxa de chegada constante (constant-arrival-rate).</span>
+  </div>
+</section>
+
+<!-- ░░░ S6 LATÊNCIA ░░░ -->
+<section class="slide">
+  <div class="sld-hdr"><div class="logo">PUC Minas <span>Arquitetura de Software</span></div><div class="pg">Slide 5 · Resultados</div></div>
+  <div class="sld-body">
+    <h2><span class="badge b-3">III. Resultados</span><span class="t">Resultados: latência</span></h2>
+    <div class="grid-2w" style="flex:1;align-items:start;">
+      <div>
+        <table class="cmp-table">
+          <thead><tr><th>Métrica</th><th>Sem cache</th><th>Com cache</th><th>Melhora</th></tr></thead>
+          <tbody>
+            <tr><td>Latência média</td><td class="cell-bad">12.379 ms</td><td class="cell-good">5.471 ms</td><td class="cell-good">−55,8%</td></tr>
+            <tr><td>Latência p90</td><td class="cell-bad">16.686 ms</td><td class="cell-good">7.461 ms</td><td class="cell-good">−55,3%</td></tr>
+            <tr><td>Latência p95</td><td class="cell-bad">17.290 ms</td><td class="cell-good">7.713 ms</td><td class="cell-good">−55,4%</td></tr>
+            <tr><td>Latência p99</td><td class="cell-bad">17.889 ms</td><td class="cell-good">8.170 ms</td><td class="cell-good">−54,3%</td></tr>
+            <tr><td>Latência máx.</td><td class="cell-bad">18.786 ms</td><td class="cell-good">9.010 ms</td><td class="cell-good">−52,0%</td></tr>
+          </tbody>
+        </table>
+        <div class="quote-box" style="margin-top:14px;font-size:.9rem;">
+          O cache reduziu <strong>~55% o tempo de resposta</strong> em todos os percentis. O p95 caiu de 17,3 s para 7,7 s — ou seja, 95% das requisições ficaram abaixo de 7,7 s com cache.
+        </div>
+      </div>
+      <div class="stack">
+        <div class="hero">
+          <div class="num">~55%</div>
+          <div class="lbl">redução de latência em todos os percentis</div>
+        </div>
+        <div class="mini2">
+          <div class="mc g"><div class="n">5,47 ms</div><div class="l">média com cache</div></div>
+          <div class="mc r"><div class="n">12,38 ms</div><div class="l">média sem cache</div></div>
+        </div>
+      </div>
+    </div>
+    <span class="citation">Medição agregada das requisições de leitura nos dois cenários (k6 — http_req_duration). 200 VUs simultâneos.</span>
+  </div>
+</section>
+
+<!-- ░░░ S7 THROUGHPUT ░░░ -->
+<section class="slide">
+  <div class="sld-hdr"><div class="logo">PUC Minas <span>Arquitetura de Software</span></div><div class="pg">Slide 6 · Resultados</div></div>
+  <div class="sld-body">
+    <h2><span class="badge b-3">III. Resultados</span><span class="t">Resultados: throughput e volume</span></h2>
+    <div class="grid-2w" style="flex:1;align-items:start;">
+      <div>
+        <table class="cmp-table">
+          <thead><tr><th>Métrica</th><th>Sem cache</th><th>Com cache</th><th>Melhora</th></tr></thead>
+          <tbody>
+            <tr><td>Requisições totais</td><td class="cell-bad">2.982</td><td class="cell-good">6.044</td><td class="cell-good">+102,7%</td></tr>
+            <tr><td>Throughput (req/s)</td><td class="cell-bad">13,54</td><td class="cell-good">28,14</td><td class="cell-good">+107,8%</td></tr>
+            <tr><td>Iterações concluídas</td><td class="cell-bad">728</td><td class="cell-good">1.617</td><td class="cell-good">+122,1%</td></tr>
+            <tr><td>Iterações dropadas</td><td class="cell-bad">5.450</td><td class="cell-good">4.657</td><td class="cell-good">−14,5%</td></tr>
+          </tbody>
+        </table>
+        <div class="quote-box" style="margin-top:14px;font-size:.9rem;">
+          Com cache, o servidor entregou <strong>mais que o dobro de requisições</strong> no mesmo tempo e completou <strong>2,2× mais jornadas</strong> de cliente.
+        </div>
+      </div>
+      <div class="stack">
+        <div class="hero" style="background:linear-gradient(135deg,#5b21a6,#8E44AD);">
+          <div class="num">+108%</div>
+          <div class="lbl">throughput (req/s) com cache ativo</div>
+        </div>
+        <div class="mini2">
+          <div class="mc g"><div class="n">28,14</div><div class="l">req/s com cache</div></div>
+          <div class="mc r"><div class="n">13,54</div><div class="l">req/s sem cache</div></div>
+        </div>
+      </div>
+    </div>
+    <span class="citation">k6 — http_reqs, iterations, dropped_iterations. Iterações dropadas: jornadas que o gerador de carga não conseguiu iniciar dentro da janela — caem quando o servidor responde mais rápido.</span>
+  </div>
+</section>
+
+<!-- ░░░ S8 HIT/MISS ░░░ -->
+<section class="slide">
+  <div class="sld-hdr"><div class="logo">PUC Minas <span>Arquitetura de Software</span></div><div class="pg">Slide 7 · Resultados</div></div>
+  <div class="sld-body">
+    <h2><span class="badge b-3">III. Resultados</span><span class="t">Cache hit, miss e invalidação</span></h2>
+    <p style="margin-bottom:10px;">Medido durante o cenário <code>cache-on</code> com 200 usuários virtuais:</p>
+    <div class="grid-2">
+      <div>
+        <table class="cmp-table">
+          <thead><tr><th>Contador</th><th>Valor</th></tr></thead>
+          <tbody>
+            <tr><td>Cache HITs</td><td class="cell-good">420</td></tr>
+            <tr><td>Cache MISSes</td><td class="cell-mid">291</td></tr>
+            <tr><td>Hit Rate</td><td class="cell-good">59,1%</td></tr>
+            <tr><td>Invalidações</td><td>49</td></tr>
+          </tbody>
+        </table>
+        <div class="note-box" style="margin-top:12px;">
+          <p style="font-size:.86rem;">As <strong>49 invalidações</strong> correspondem às compras (<code>POST /orders</code>) — cada compra apaga <code>orders:all</code> e renova o cache na próxima leitura.</p>
+        </div>
+      </div>
+      <div class="stack">
+        <h3>Consultas ao banco</h3>
+        <table class="cmp-table">
+          <thead><tr><th>Cenário</th><th>Consultas</th><th>Diferença</th></tr></thead>
+          <tbody>
+            <tr><td>Sem cache</td><td class="cell-bad">1.422</td><td>base</td></tr>
+            <tr><td>Com cache</td><td class="cell-good">804</td><td class="cell-good">−43,5%</td></tr>
+          </tbody>
+        </table>
+        <div class="hero" style="padding:14px;">
+          <div class="num" style="font-size:2.4rem;">43,5%</div>
+          <div class="lbl">menos consultas ao PostgreSQL</div>
+        </div>
+      </div>
+    </div>
+    <span class="citation">Com ~60% de hit rate, o banco recebeu quase metade das consultas. Contadores expostos em <code>GET /stats</code> (hash em Redis: hits / misses / invalidations / db_queries).</span>
+  </div>
+</section>
+
+<!-- ░░░ S10 CONSISTÊNCIA ░░░ -->
+<section class="slide">
+  <div class="sld-hdr"><div class="logo">PUC Minas <span>Arquitetura de Software</span></div><div class="pg">Slide 9 · Consistência</div></div>
+  <div class="sld-body">
+    <h2><span class="badge b-4">IV. Análise</span><span class="t">Consistência dos dados</span></h2>
+    <div class="grid-2">
+      <div class="stack">
+        <table class="cmp-table">
+          <thead><tr><th>Garantia</th><th>Este projeto</th></tr></thead>
+          <tbody>
+            <tr><td>Consistência forte</td><td class="cell-bad">✗ Não garante</td></tr>
+            <tr><td>Consistência eventual</td><td class="cell-good">✓ Converge rápido</td></tr>
+            <tr><td>Defasagem máxima</td><td class="cell-mid">≤ 300 s (TTL)</td></tr>
+            <tr><td>Defasagem típica</td><td class="cell-good">próxima requisição</td></tr>
+          </tbody>
+        </table>
+        <div class="card purple">
+          <h4>Estratégia: invalidate-on-write</h4>
+          <p style="font-size:.85rem;">Escrita → banco persistido → chave <strong>apagada</strong> (não atualizada). Não há janela de dado desatualizado <em>ativo</em> no Redis — a chave deixa de existir e a próxima leitura renova.</p>
+        </div>
+      </div>
+      <div class="stack">
+        <div class="warn-box">
+          <h4>Condição de corrida (benigna)</h4>
+          <p style="font-size:.85rem;">Duas leituras simultâneas no MISS fazem duas consultas — ambas gravam o <strong>mesmo</strong> dado no Redis. Inofensivo. A gem <code>redis-client</code> é thread-safe.</p>
+        </div>
+        <div class="tip-box">
+          <h4>TTL (300 s) como rede de segurança</h4>
+          <p style="font-size:.85rem;">Se uma invalidação falhar (Redis momentaneamente indisponível), a chave expira em 5 min e o sistema volta ao estado correto — sem intervenção manual.</p>
+        </div>
+        <div class="quote-box" style="font-size:.86rem;">
+          Aceitamos leitura eventualmente desatualizada na janela de invalidação em troca de <strong>~2× throughput</strong> e <strong>~55% menos latência</strong> — aceitável para dados de catálogo.
+        </div>
+      </div>
+    </div>
+    <span class="citation">Consistência eventual: VOGELS, W. Eventually Consistent. <em>Communications of the ACM</em>, v.52, n.1, 2009. DOI: 10.1145/1435417.1435432. | Trade-off CAP/PACELC aplicado a cache.</span>
+  </div>
+</section>
+
+<!-- ░░░ S11 TRADE-OFFS ░░░ -->
+<section class="slide">
+  <div class="sld-hdr"><div class="logo">PUC Minas <span>Arquitetura de Software</span></div><div class="pg">Slide 10 · Trade-offs</div></div>
+  <div class="sld-body">
+    <h2><span class="badge b-4">IV. Análise</span><span class="t">Trade-offs arquiteturais</span></h2>
+    <div class="grid-2w" style="align-items:start;">
+      <table class="cmp-table">
+        <thead><tr><th>Dimensão</th><th>Sem cache</th><th>Com cache</th></tr></thead>
+        <tbody>
+          <tr><td>Latência</td><td class="cell-bad">Alta (banco toda vez)</td><td class="cell-good">Baixa nos HITs (~55% ↓)</td></tr>
+          <tr><td>Throughput</td><td class="cell-bad">Limitado pelo banco</td><td class="cell-good">~2× maior</td></tr>
+          <tr><td>Consistência</td><td class="cell-good">Forte</td><td class="cell-mid">Eventual (janela mín.)</td></tr>
+          <tr><td>Complexidade</td><td class="cell-good">Simples</td><td class="cell-mid">Maior (invalidação + TTL)</td></tr>
+          <tr><td>Resiliência</td><td class="cell-bad">Ponto único: banco</td><td class="cell-good">Redis off → fallback ao banco</td></tr>
+          <tr><td>Memória</td><td class="cell-good">Zero extra</td><td class="cell-mid">Redis ~MB de catálogo</td></tr>
+          <tr><td>Warm-up</td><td class="cell-good">Não necessário</td><td class="cell-mid">1ªs requisições são MISS</td></tr>
+        </tbody>
+      </table>
+      <div class="card green">
+        <h4>Quando cache-aside faz sentido</h4>
+        <ul style="font-size:.88rem;">
+          <li>Leituras ≫ escritas (<strong>read-heavy</strong>)</li>
+          <li>Dados com baixa volatilidade (catálogo)</li>
+          <li>Tolerância a consistência eventual</li>
+          <li>Latência de banco acima do aceitável sob carga</li>
+        </ul>
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid #bfe3c6;font-size:.84rem;color:#555;">
+          Fora desse perfil (escrita pesada, consistência forte obrigatória), o cache adiciona complexidade sem ganho proporcional.
+        </div>
+      </div>
+    </div>
+    <span class="citation">WUST, K.; GERVAIS, A. Do You Need a Blockchain? <em>IEEE CVCBT 2018</em> — raciocínio análogo: adotar a camada extra só quando o trade-off compensa. | Cache-Aside trade-offs: MICROSOFT Cloud Design Patterns.</span>
+  </div>
+</section>
+
+<!-- ░░░ S12 CONCLUSÃO ░░░ -->
+<section class="slide">
+  <div class="sld-hdr"><div class="logo">PUC Minas <span>Arquitetura de Software</span></div><div class="pg">Slide 11 · Conclusão</div></div>
+  <div class="sld-body">
+    <h2><span class="badge b-4">IV. Análise</span><span class="t">Conclusão</span></h2>
+    <div class="grid-2" style="align-items:start;">
+      <div>
+        <h3>Objetivos do enunciado × resultado</h3>
+        <table class="cmp-table">
+          <thead><tr><th>Objetivo</th><th>Resultado medido</th></tr></thead>
+          <tbody>
+            <tr><td>Reduzir latência</td><td class="cell-good">−55% em todos os percentis</td></tr>
+            <tr><td>Diminuir carga no banco</td><td class="cell-good">−43,5% de consultas</td></tr>
+            <tr><td>Melhorar desempenho</td><td class="cell-good">+108% de throughput</td></tr>
+            <tr><td>Demonstrar hit/miss</td><td class="cell-good">59,1% · 49 invalidações</td></tr>
+            <tr><td>Discutir consistência</td><td class="cell-good">Eventual · documentada</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="stack">
+        <h3>Lições arquiteturais</h3>
+        <div class="card blue" style="padding:11px 14px;"><p style="font-size:.86rem;margin:0;"><strong>1.</strong> Cache-aside dá <strong>controle total</strong> — e responsabilidade total — à aplicação.</p></div>
+        <div class="card purple" style="padding:11px 14px;"><p style="font-size:.86rem;margin:0;"><strong>2.</strong> <strong>Invalidar</strong> é mais seguro que atualizar: elimina dado inconsistente ativo no Redis.</p></div>
+        <div class="card blue" style="padding:11px 14px;"><p style="font-size:.86rem;margin:0;"><strong>3.</strong> O TTL não é só otimização de memória — é <strong>rede de segurança</strong> para falhas de invalidação.</p></div>
+        <div class="card green" style="padding:11px 14px;"><p style="font-size:.86rem;margin:0;"><strong>4.</strong> 59% de hit rate já entrega ganho expressivo; sistemas reais com dados estáveis atingem <strong>80–95%</strong>.</p></div>
+      </div>
+    </div>
+    <div style="margin-top:14px;background:linear-gradient(135deg,#003554,#005082);color:#fff;padding:13px 20px;border-radius:10px;display:flex;align-items:center;gap:16px;">
+      <div style="font-size:1.8rem;">🎯</div>
+      <p style="color:#fff;font-size:.92rem;margin:0;">Com o padrão Cache Aside, a mesma API entregou <strong style="color:#7dd3fc;">o dobro de throughput</strong> e <strong style="color:#7dd3fc;">metade da latência</strong>, custando ao banco <strong style="color:#7dd3fc;">menos da metade</strong> das consultas — ao preço de consistência eventual controlada.</p>
+    </div>
+    <span class="citation">Resultados reproduzíveis: <code>backend/k6/</code> (scripts e relatórios). Documentação de consistência: <code>backend/k6/CONSISTENCIA.md</code>.</span>
+  </div>
+</section>
+</div><!-- /deck -->
+</body>
+</html>
