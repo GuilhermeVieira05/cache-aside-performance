@@ -2,20 +2,22 @@ class OrdersController < ApplicationController
   before_action :set_order, only: %i[show update destroy]
 
   def index
-    orders = CacheService.fetch("orders:all") do
+    orders, cache_status = CacheService.fetch("orders:all") do
       Order.includes(order_items: :product).order(:id).to_json(
         include: { order_items: { only: %i[id product_id quantity unit_price] } }
       )
     end
+    response.headers["X-Cache"] = cache_status.to_s.upcase
     render json: orders
   end
 
   def show
-    order = CacheService.fetch("orders:#{@order.id}") do
+    order, cache_status = CacheService.fetch("orders:#{@order.id}") do
       @order.to_json(
         include: { order_items: { only: %i[id product_id quantity unit_price] } }
       )
     end
+    response.headers["X-Cache"] = cache_status.to_s.upcase
     render json: order
   end
 
@@ -38,6 +40,7 @@ class OrdersController < ApplicationController
       order.recalculate_total!
     end
     CacheService.invalidate("orders:all")
+    response.headers["X-Cache"] = "WRITE"
     render json: order.as_json(
       include: { order_items: { only: %i[id product_id quantity unit_price] } }
     ), status: :created
@@ -48,6 +51,7 @@ class OrdersController < ApplicationController
   def update
     if @order.update(update_params)
       CacheService.invalidate("orders:all", "orders:#{@order.id}")
+      response.headers["X-Cache"] = "WRITE"
       render json: @order
     else
       render json: { errors: @order.errors.full_messages }, status: :unprocessable_entity
@@ -57,6 +61,7 @@ class OrdersController < ApplicationController
   def destroy
     @order.destroy
     CacheService.invalidate("orders:all", "orders:#{@order.id}")
+    response.headers["X-Cache"] = "INVALIDATED"
     head :no_content
   end
 
