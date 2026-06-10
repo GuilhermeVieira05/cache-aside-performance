@@ -2,12 +2,12 @@ class ProductsController < ApplicationController
   before_action :set_product, only: %i[show update destroy]
 
   def index
-    products = CacheService.fetch("products:all") { Product.order(:id).as_json }
+    products = CacheService.fetch("products:all") { Product.order(:id).to_json }
     render json: products
   end
 
   def show
-    product = CacheService.fetch("products:#{@product.id}") { @product.as_json }
+    product = CacheService.fetch("products:#{@product.id}") { @product.to_json }
     render json: product
   end
 

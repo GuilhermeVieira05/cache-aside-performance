@@ -1,0 +1,87 @@
+<h2>Qual tema visual combina mais com a apresentação?</h2>
+<p class="subtitle">Mockup de um slide de resultados em cada tema — escolha o que parece mais adequado para uma apresentação universitária técnica.</p>
+
+<div class="cards">
+
+  <!-- OPÇÃO A: Tech Dark -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#0d1117;padding:16px;border-radius:6px;font-family:'Segoe UI',sans-serif;">
+        <div style="font-size:11px;color:#58a6ff;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px;">SLIDE 6</div>
+        <div style="font-size:16px;font-weight:700;color:#f0f6fc;border-bottom:2px solid #e94560;padding-bottom:6px;margin-bottom:10px;">Resultados: Latência</div>
+        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+          <thead><tr style="background:#161b22;">
+            <th style="color:#8b949e;padding:4px 6px;text-align:left;">Métrica</th>
+            <th style="color:#8b949e;padding:4px 6px;">Sem cache</th>
+            <th style="color:#8b949e;padding:4px 6px;">Com cache</th>
+            <th style="color:#8b949e;padding:4px 6px;">Melhora</th>
+          </tr></thead>
+          <tbody>
+            <tr><td style="color:#c9d1d9;padding:3px 6px;">Latência média</td><td style="color:#f85149;text-align:center;">12.379 ms</td><td style="color:#3fb950;text-align:center;">5.471 ms</td><td style="color:#3fb950;text-align:center;font-weight:700;">−55,8%</td></tr>
+            <tr style="background:#161b22;"><td style="color:#c9d1d9;padding:3px 6px;">Latência p95</td><td style="color:#f85149;text-align:center;">17.290 ms</td><td style="color:#3fb950;text-align:center;">7.713 ms</td><td style="color:#3fb950;text-align:center;font-weight:700;">−55,4%</td></tr>
+          </tbody>
+        </table>
+        <div style="margin-top:8px;font-size:10px;color:#8b949e;border-left:3px solid #58a6ff;padding-left:8px;font-style:italic;">O cache reduziu ~55% o tempo de resposta em todos os percentis.</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Tech Dark</h3>
+      <p>Fundo escuro estilo GitHub, destaques em azul/verde/vermelho. Visual de engenharia moderno.</p>
+    </div>
+  </div>
+
+  <!-- OPÇÃO B: Clean Academic -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#ffffff;padding:16px;border-radius:6px;font-family:'Segoe UI',sans-serif;border:1px solid #e5e7eb;">
+        <div style="font-size:11px;color:#6b7280;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px;">SLIDE 6</div>
+        <div style="font-size:16px;font-weight:700;color:#1e3a5f;border-bottom:3px solid #1e3a5f;padding-bottom:6px;margin-bottom:10px;">Resultados: Latência</div>
+        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+          <thead><tr style="background:#1e3a5f;">
+            <th style="color:white;padding:4px 6px;text-align:left;">Métrica</th>
+            <th style="color:white;padding:4px 6px;">Sem cache</th>
+            <th style="color:white;padding:4px 6px;">Com cache</th>
+            <th style="color:white;padding:4px 6px;">Melhora</th>
+          </tr></thead>
+          <tbody>
+            <tr><td style="color:#374151;padding:3px 6px;">Latência média</td><td style="color:#dc2626;text-align:center;">12.379 ms</td><td style="color:#16a34a;text-align:center;">5.471 ms</td><td style="color:#16a34a;text-align:center;font-weight:700;">−55,8%</td></tr>
+            <tr style="background:#f3f4f6;"><td style="color:#374151;padding:3px 6px;">Latência p95</td><td style="color:#dc2626;text-align:center;">17.290 ms</td><td style="color:#16a34a;text-align:center;">7.713 ms</td><td style="color:#16a34a;text-align:center;font-weight:700;">−55,4%</td></tr>
+          </tbody>
+        </table>
+        <div style="margin-top:8px;font-size:10px;color:#6b7280;border-left:3px solid #1e3a5f;padding-left:8px;font-style:italic;">O cache reduziu ~55% o tempo de resposta em todos os percentis.</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Clean Academic</h3>
+      <p>Fundo branco, azul escuro institucional. Clássico para apresentações universitárias.</p>
+    </div>
+  </div>
+
+  <!-- OPÇÃO C: Gradient Modern -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#f8fafc;padding:16px;border-radius:6px;font-family:'Segoe UI',sans-serif;">
+        <div style="font-size:11px;color:#7c3aed;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px;">SLIDE 6</div>
+        <div style="font-size:16px;font-weight:700;background:linear-gradient(90deg,#7c3aed,#2563eb);-webkit-background-clip:text;-webkit-text-fill-color:transparent;border-bottom:3px solid #7c3aed;padding-bottom:6px;margin-bottom:10px;">Resultados: Latência</div>
+        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+          <thead><tr style="background:linear-gradient(90deg,#7c3aed,#2563eb);">
+            <th style="color:white;padding:4px 6px;text-align:left;">Métrica</th>
+            <th style="color:white;padding:4px 6px;">Sem cache</th>
+            <th style="color:white;padding:4px 6px;">Com cache</th>
+            <th style="color:white;padding:4px 6px;">Melhora</th>
+          </tr></thead>
+          <tbody>
+            <tr><td style="color:#374151;padding:3px 6px;">Latência média</td><td style="color:#dc2626;text-align:center;">12.379 ms</td><td style="color:#059669;text-align:center;">5.471 ms</td><td style="color:#059669;text-align:center;font-weight:700;">−55,8%</td></tr>
+            <tr style="background:#f1f5f9;"><td style="color:#374151;padding:3px 6px;">Latência p95</td><td style="color:#dc2626;text-align:center;">17.290 ms</td><td style="color:#059669;text-align:center;">7.713 ms</td><td style="color:#059669;text-align:center;font-weight:700;">−55,4%</td></tr>
+          </tbody>
+        </table>
+        <div style="margin-top:8px;font-size:10px;color:#6b7280;border-left:3px solid #7c3aed;padding-left:8px;font-style:italic;">O cache reduziu ~55% o tempo de resposta em todos os percentis.</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Gradient Modern</h3>
+      <p>Fundo claro com gradiente roxo-azul nos cabeçalhos. Moderno e visualmente marcante.</p>
+    </div>
+  </div>
+
+</div>

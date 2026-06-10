@@ -2,12 +2,12 @@ class CustomersController < ApplicationController
   before_action :set_customer, only: %i[show update destroy]
 
   def index
-    customers = CacheService.fetch("customers:all") { Customer.order(:id).as_json }
+    customers = CacheService.fetch("customers:all") { Customer.order(:id).to_json }
     render json: customers
   end
 
   def show
-    customer = CacheService.fetch("customers:#{@customer.id}") { @customer.as_json }
+    customer = CacheService.fetch("customers:#{@customer.id}") { @customer.to_json }
     render json: customer
   end
 

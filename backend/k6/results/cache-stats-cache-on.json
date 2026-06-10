@@ -1,0 +1,10 @@
+﻿{
+    "hits":  420,
+    "misses":  291,
+    "hit_rate":  59.07,
+    "invalidations":  49,
+    "db_queries":  804,
+    "label":  "cache-on",
+    "journeys":  200,
+    "captured_at":  "2026-06-09T18:03:04.8110483-03:00"
+}

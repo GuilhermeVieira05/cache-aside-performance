@@ -13,7 +13,9 @@ services:
       - RAILS_MASTER_KEY
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/cache_aside_development
       - REDIS_URL=redis://redis:6379/0
-      - CACHE_ENABLED=true
+      - CACHE_ENABLED=${CACHE_ENABLED:-true}
+      - LOAD_TEST_MODE=${LOAD_TEST_MODE:-false}
+      - RAILS_MAX_THREADS=${RAILS_MAX_THREADS:-3}
     depends_on:
       db:
         condition: service_healthy
@@ -89,6 +91,28 @@ services:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning
     depends_on:
       - loki
+    networks:
+      - app_network
+
+  # Carga: roda sob demanda via `docker-compose run --rm k6 ...` (ver run-comparison.ps1).
+  k6:
+    image: grafana/k6:latest
+    profiles: ["loadtest"]
+    volumes:
+      - ./k6:/scripts
+      - ./k6/results:/results
+    environment:
+      - BASE_URL=http://web:3000
+    networks:
+      - app_network
+
+  # Interface comparativa (cache-on vs cache-off) em http://localhost:8080/report/
+  report:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./k6:/usr/share/nginx/html:ro
     networks:
       - app_network
 

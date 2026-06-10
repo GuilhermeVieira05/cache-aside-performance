@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cache-aside — Comparativo de Performance (k6)</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1117; --panel: #1a1d27; --panel2: #232733;
+      --text: #e6e8ee; --muted: #9aa0b0; --line: #2c303c;
+      --on: #34d399; --off: #f87171; --accent: #60a5fa;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      padding: 32px 24px 64px;
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    .sub { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+    .legend { display: flex; gap: 16px; align-items: center; margin-bottom: 24px; font-size: 13px; }
+    .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+    .dot.on { background: var(--on); } .dot.off { background: var(--off); }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 28px; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+    .card h3 { margin: 0 0 12px; font-size: 13px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: .04em; }
+    .vals { display: flex; gap: 18px; align-items: baseline; }
+    .v { font-size: 26px; font-weight: 700; }
+    .v small { font-size: 12px; color: var(--muted); font-weight: 400; display: block; }
+    .v.on { color: var(--on); } .v.off { color: var(--off); }
+    .delta { margin-top: 12px; font-size: 14px; font-weight: 600; }
+    .delta.good { color: var(--on); } .delta.bad { color: var(--off); }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+    .chart-box { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 16px; }
+    .chart-box h3 { margin: 0 0 14px; font-size: 15px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: right; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+    th:first-child, td:first-child { text-align: left; }
+    thead th { color: var(--muted); font-weight: 500; }
+    .banner { background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 28px; text-align: center; color: var(--muted); }
+    code { background: var(--panel2); padding: 2px 7px; border-radius: 5px; color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Cache-aside — Comparativo de Performance</h1>
+    <div class="sub">Clientes simultâneos navegando e comprando · k6 (ramping-arrival-rate) · <span id="meta"></span></div>
+
+    <div id="content" style="display:none">
+      <div class="legend">
+        <span><span class="dot on"></span>Com cache (CACHE_ENABLED=true)</span>
+        <span><span class="dot off"></span>Sem cache (CACHE_ENABLED=false)</span>
+      </div>
+
+      <div class="cards" id="cards"></div>
+
+      <div class="grid2">
+        <div class="chart-box"><h3>Latência geral por percentil (ms)</h3><canvas id="latChart"></canvas></div>
+        <div class="chart-box"><h3>p95 por etapa da jornada (ms)</h3><canvas id="stepChart"></canvas></div>
+      </div>
+      <div class="grid2">
+        <div class="chart-box"><h3>Throughput — requisições por segundo</h3><canvas id="rpsChart"></canvas></div>
+        <div class="chart-box"><h3>Taxa de erro (%)</h3><canvas id="errChart"></canvas></div>
+      </div>
+
+      <div class="chart-box">
+        <h3>Tabela comparativa</h3>
+        <table id="tbl"><thead><tr><th>Métrica</th><th>Com cache</th><th>Sem cache</th><th>Diferença</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+
+    <div id="cache-metrics" style="display:none">
+      <h2 style="font-size:17px;margin:32px 0 16px">Métricas de Cache (obrigatórias)</h2>
+      <div class="cards" id="cache-cards"></div>
+      <div class="chart-box" style="margin-bottom:16px">
+        <h3>Comparativo de consultas ao banco vs leituras do cache</h3>
+        <canvas id="dbVsCacheChart"></canvas>
+      </div>
+    </div>
+
+    <div class="banner" id="banner">Carregando resultados…</div>
+  </div>
+
+  <script>
+    const ON = '#34d399', OFF = '#f87171';
+
+    async function loadSummary(label) {
+      try {
+        const r = await fetch(`../results/summary-${label}.json?t=${Date.now()}`);
+        if (!r.ok) return null;
+        return await r.json();
+      } catch { return null; }
+    }
+
+    async function loadCacheStats(label) {
+      try {
+        const r = await fetch(`../results/cache-stats-${label}.json?t=${Date.now()}`);
+        if (!r.ok) return null;
+        return await r.json();
+      } catch { return null; }
+    }
+
+    // Acesso seguro a data.metrics[name].values[stat]
+    const M = (d, name, stat) => d?.metrics?.[name]?.values?.[stat];
+    const ms = (v) => v == null ? '—' : `${v.toFixed(1)} ms`;
+    const fmt = (v, suffix = '', dec = 1) => v == null ? '—' : `${v.toFixed(dec)}${suffix}`;
+
+    function deltaLatency(on, off) { // menor é melhor
+      if (on == null || off == null || off === 0) return null;
+      return ((off - on) / off) * 100; // positivo = cache mais rápido
+    }
+    function deltaThroughput(on, off) { // maior é melhor
+      if (on == null || off == null || off === 0) return null;
+      return ((on - off) / off) * 100;
+    }
+
+    function card(title, onVal, offVal, onStr, offStr, delta, betterWhenPositive = true) {
+      const d = delta == null ? '' :
+        `<div class="delta ${(delta >= 0) === betterWhenPositive ? 'good' : 'bad'}">${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta).toFixed(1)}%</div>`;
+      return `<div class="card"><h3>${title}</h3><div class="vals">
+        <div class="v on">${onStr}<small>com cache</small></div>
+        <div class="v off">${offStr}<small>sem cache</small></div>
+      </div>${d}</div>`;
+    }
+
+    function barChart(id, labels, on, off, unit) {
+      new Chart(document.getElementById(id), {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            { label: 'Com cache', data: on, backgroundColor: ON, borderRadius: 4 },
+            { label: 'Sem cache', data: off, backgroundColor: OFF, borderRadius: 4 },
+          ],
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { labels: { color: '#e6e8ee' } },
+            tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y?.toFixed(1)}${unit}` } },
+          },
+          scales: {
+            x: { ticks: { color: '#9aa0b0' }, grid: { color: '#2c303c' } },
+            y: { ticks: { color: '#9aa0b0' }, grid: { color: '#2c303c' }, beginAtZero: true },
+          },
+        },
+      });
+    }
+
+    function row(tbody, name, on, off, fmtFn, deltaFn, betterPos) {
+      const delta = deltaFn ? deltaFn(on, off) : null;
+      const cls = delta == null ? '' : ((delta >= 0) === betterPos ? 'style="color:#34d399"' : 'style="color:#f87171"');
+      const ds = delta == null ? '—' : `${delta >= 0 ? '+' : ''}${delta.toFixed(1)}%`;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${name}</td><td>${fmtFn(on)}</td><td>${fmtFn(off)}</td><td ${cls}>${ds}</td>`;
+      tbody.appendChild(tr);
+    }
+
+    (async function () {
+      const [on, off] = await Promise.all([loadSummary('cache-on'), loadSummary('cache-off')]);
+      const banner = document.getElementById('banner');
+
+      if (!on && !off) {
+        banner.innerHTML = 'Nenhum resultado encontrado ainda. Rode <code>./run-comparison.ps1</code> para gerar <code>summary-cache-on.json</code> e <code>summary-cache-off.json</code>.';
+        return;
+      }
+      if (!on || !off) {
+        banner.innerHTML = `Apenas o run <b>${on ? 'cache-on' : 'cache-off'}</b> foi encontrado. Rode o outro cenário para ver o comparativo completo.`;
+        return;
+      }
+
+      document.getElementById('banner').style.display = 'none';
+      document.getElementById('content').style.display = 'block';
+      document.getElementById('meta').textContent =
+        `${M(on, 'http_reqs', 'count')?.toLocaleString('pt-BR') || '?'} vs ${M(off, 'http_reqs', 'count')?.toLocaleString('pt-BR') || '?'} requisições`;
+
+      // Cards
+      const cards = document.getElementById('cards');
+      const p95on = M(on, 'http_req_duration', 'p(95)'), p95off = M(off, 'http_req_duration', 'p(95)');
+      const rpsOn = M(on, 'http_reqs', 'rate'), rpsOff = M(off, 'http_reqs', 'rate');
+      const errOn = (M(on, 'http_req_failed', 'rate') || 0) * 100, errOff = (M(off, 'http_req_failed', 'rate') || 0) * 100;
+      cards.innerHTML =
+        card('Latência p95', p95on, p95off, ms(p95on), ms(p95off), deltaLatency(p95on, p95off), true) +
+        card('Throughput (req/s)', rpsOn, rpsOff, fmt(rpsOn), fmt(rpsOff), deltaThroughput(rpsOn, rpsOff), true) +
+        card('Taxa de erro', errOn, errOff, fmt(errOn, '%', 2), fmt(errOff, '%', 2), deltaLatency(errOn, errOff), true);
+
+      // Charts
+      const pcts = ['avg', 'p(90)', 'p(95)', 'p(99)'];
+      barChart('latChart', ['média', 'p90', 'p95', 'p99'],
+        pcts.map((p) => M(on, 'http_req_duration', p)), pcts.map((p) => M(off, 'http_req_duration', p)), ' ms');
+
+      const steps = [['browse_catalog', 'Catálogo'], ['view_product', 'Produto'], ['list_orders', 'Pedidos'], ['checkout', 'Compra']];
+      barChart('stepChart', steps.map((s) => s[1]),
+        steps.map((s) => M(on, s[0], 'p(95)')), steps.map((s) => M(off, s[0], 'p(95)')), ' ms');
+
+      barChart('rpsChart', ['req/s'], [rpsOn], [rpsOff], ' req/s');
+      barChart('errChart', ['erros'], [errOn], [errOff], '%');
+
+      // Tabela
+      const tbody = document.querySelector('#tbl tbody');
+      row(tbody, 'Requisições totais', M(on, 'http_reqs', 'count'), M(off, 'http_reqs', 'count'), (v) => v == null ? '—' : v.toLocaleString('pt-BR'), null);
+      row(tbody, 'Throughput (req/s)', rpsOn, rpsOff, (v) => fmt(v), deltaThroughput, true);
+      row(tbody, 'Latência média', M(on, 'http_req_duration', 'avg'), M(off, 'http_req_duration', 'avg'), ms, deltaLatency, true);
+      row(tbody, 'Latência p90', M(on, 'http_req_duration', 'p(90)'), M(off, 'http_req_duration', 'p(90)'), ms, deltaLatency, true);
+      row(tbody, 'Latência p95', p95on, p95off, ms, deltaLatency, true);
+      row(tbody, 'Latência p99', M(on, 'http_req_duration', 'p(99)'), M(off, 'http_req_duration', 'p(99)'), ms, deltaLatency, true);
+      row(tbody, 'Latência máxima', M(on, 'http_req_duration', 'max'), M(off, 'http_req_duration', 'max'), ms, deltaLatency, true);
+      row(tbody, 'Taxa de erro', errOn, errOff, (v) => fmt(v, '%', 2), deltaLatency, true);
+      row(tbody, 'Iterações dropadas', M(on, 'dropped_iterations', 'count'), M(off, 'dropped_iterations', 'count'), (v) => v == null ? '0' : v.toLocaleString('pt-BR'), null);
+      row(tbody, 'p95 — catálogo', M(on, 'browse_catalog', 'p(95)'), M(off, 'browse_catalog', 'p(95)'), ms, deltaLatency, true);
+      row(tbody, 'p95 — ver pedidos', M(on, 'list_orders', 'p(95)'), M(off, 'list_orders', 'p(95)'), ms, deltaLatency, true);
+      row(tbody, 'p95 — compra', M(on, 'checkout', 'p(95)'), M(off, 'checkout', 'p(95)'), ms, deltaLatency, true);
+
+      // Métricas de cache (contadores)
+      const [statsOn, statsOff] = await Promise.all([loadCacheStats('cache-on'), loadCacheStats('cache-off')]);
+      if (statsOn || statsOff) {
+        document.getElementById('cache-metrics').style.display = 'block';
+        const cCards = document.getElementById('cache-cards');
+
+        const S = (s, f) => s?.[f] ?? null;
+        const fmtInt = (v) => v == null ? '—' : v.toLocaleString('pt-BR');
+        const fmtPct = (v) => v == null ? '—' : `${v.toFixed(1)}%`;
+
+        const dbOn  = S(statsOn,  'db_queries'),   dbOff  = S(statsOff, 'db_queries');
+        const hitOn = S(statsOn,  'hits'),          hitOff = S(statsOff, 'hits');
+        const misOn = S(statsOn,  'misses'),        misOff = S(statsOff, 'misses');
+        const hrOn  = S(statsOn,  'hit_rate'),      hrOff  = S(statsOff, 'hit_rate');
+        const invOn = S(statsOn,  'invalidations'), invOff = S(statsOff, 'invalidations');
+
+        cCards.innerHTML =
+          card('Consultas ao banco (db_queries)', dbOn, dbOff, fmtInt(dbOn), fmtInt(dbOff),
+               dbOff != null && dbOn != null && dbOff > 0 ? ((dbOff - dbOn) / dbOff * 100) : null, true) +
+          card('Cache HITs', hitOn, hitOff, fmtInt(hitOn), fmtInt(hitOff), null) +
+          card('Cache Misses', misOn, misOff, fmtInt(misOn), fmtInt(misOff), null) +
+          card('Hit rate (%)', hrOn, hrOff, fmtPct(hrOn), fmtPct(hrOff),
+               hrOn != null && hrOff != null ? (hrOn - hrOff) : null, true) +
+          card('Invalidações', invOn, invOff, fmtInt(invOn), fmtInt(invOff), null);
+
+        // Gráfico: DB queries vs cache HITs (com cache on)
+        if (statsOn) {
+          new Chart(document.getElementById('dbVsCacheChart'), {
+            type: 'bar',
+            data: {
+              labels: ['Com cache', 'Sem cache'],
+              datasets: [
+                { label: 'Consultas ao banco', data: [dbOn, dbOff], backgroundColor: OFF, borderRadius: 4 },
+                { label: 'Cache HITs', data: [hitOn, hitOff ?? 0], backgroundColor: ON, borderRadius: 4 },
+              ],
+            },
+            options: {
+              responsive: true,
+              plugins: {
+                legend: { labels: { color: '#e6e8ee' } },
+                tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y?.toLocaleString('pt-BR')}` } },
+              },
+              scales: {
+                x: { ticks: { color: '#9aa0b0' }, grid: { color: '#2c303c' } },
+                y: { ticks: { color: '#9aa0b0' }, grid: { color: '#2c303c' }, beginAtZero: true },
+              },
+            },
+          });
+        }
+      }
+    })();
+  </script>
+</body>
+</html>

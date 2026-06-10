@@ -3,7 +3,7 @@ class OrdersController < ApplicationController
 
   def index
     orders = CacheService.fetch("orders:all") do
-      Order.includes(order_items: :product).order(:id).as_json(
+      Order.includes(order_items: :product).order(:id).to_json(
         include: { order_items: { only: %i[id product_id quantity unit_price] } }
       )
     end
@@ -12,7 +12,7 @@ class OrdersController < ApplicationController
 
   def show
     order = CacheService.fetch("orders:#{@order.id}") do
-      @order.as_json(
+      @order.to_json(
         include: { order_items: { only: %i[id product_id quantity unit_price] } }
       )
     end

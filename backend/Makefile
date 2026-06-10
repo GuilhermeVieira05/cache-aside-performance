@@ -22,3 +22,12 @@ reset:
 	docker-compose down -v
 	docker-compose up --build -d
 	docker-compose run --rm web rails db:create db:migrate
+
+# Roda o comparativo de carga cache-on vs cache-off e sobe a interface (:8080)
+bench:
+	pwsh ./run-comparison.ps1
+
+# Sobe apenas a interface comparativa com os resultados ja existentes
+report:
+	docker-compose up -d report
+	@echo "Interface: http://localhost:8080/report/"
