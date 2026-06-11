@@ -3,7 +3,7 @@
   "uid": "cache-aside-perf",
   "schemaVersion": 38,
   "version": 1,
-  "refresh": "5s",
+  "refresh": "10s",
   "time": { "from": "now-30m", "to": "now" },
   "panels": [
     {
@@ -14,7 +14,7 @@
       "options": {
         "colorMode": "background",
         "graphMode": "area",
-        "reduceOptions": { "calcs": ["sum"] }
+        "reduceOptions": { "calcs": ["lastNotNull"] }
       },
       "fieldConfig": {
         "defaults": {
@@ -25,7 +25,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum(count_over_time({job=\"rails\"} |= \"[CACHE HIT]\" [1h]))",
+          "expr": "sum(count_over_time({job=\"rails\"} |= \"[CACHE HIT]\" [$__range]))",
           "legendFormat": "Hits"
         }
       ]
@@ -38,7 +38,7 @@
       "options": {
         "colorMode": "background",
         "graphMode": "area",
-        "reduceOptions": { "calcs": ["sum"] }
+        "reduceOptions": { "calcs": ["lastNotNull"] }
       },
       "fieldConfig": {
         "defaults": {
@@ -49,7 +49,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum(count_over_time({job=\"rails\"} |= \"[CACHE MISS]\" [1h]))",
+          "expr": "sum(count_over_time({job=\"rails\"} |= \"[CACHE MISS]\" [$__range]))",
           "legendFormat": "Misses"
         }
       ]
@@ -82,7 +82,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum(count_over_time({job=\"rails\"} |= \"[CACHE HIT]\" [1h])) / (sum(count_over_time({job=\"rails\"} |= \"[CACHE HIT]\" [1h])) + sum(count_over_time({job=\"rails\"} |= \"[CACHE MISS]\" [1h]))) * 100",
+          "expr": "sum(count_over_time({job=\"rails\"} |= \"[CACHE HIT]\" [$__range])) / (sum(count_over_time({job=\"rails\"} |= \"[CACHE HIT]\" [$__range])) + sum(count_over_time({job=\"rails\"} |= \"[CACHE MISS]\" [$__range]))) * 100",
           "legendFormat": "Hit Rate %"
         }
       ]
@@ -95,7 +95,7 @@
       "options": {
         "colorMode": "background",
         "graphMode": "area",
-        "reduceOptions": { "calcs": ["sum"] }
+        "reduceOptions": { "calcs": ["lastNotNull"] }
       },
       "fieldConfig": {
         "defaults": {
@@ -106,7 +106,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum(count_over_time({job=\"rails\"} |= \"[CACHE INVALIDATE]\" [1h]))",
+          "expr": "sum(count_over_time({job=\"rails\"} |= \"[CACHE INVALIDATE]\" [$__range]))",
           "legendFormat": "Invalidações"
         }
       ]
@@ -253,7 +253,7 @@
       "options": {
         "colorMode": "background",
         "graphMode": "area",
-        "reduceOptions": { "calcs": ["sum"] }
+        "reduceOptions": { "calcs": ["lastNotNull"] }
       },
       "fieldConfig": {
         "defaults": {
@@ -264,7 +264,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum(count_over_time({job=\"rails\"} |= \"ActiveRecord:\" !~ \"ActiveRecord: 0\" [1h]))",
+          "expr": "sum(count_over_time({job=\"rails\"} |= \"ActiveRecord:\" !~ \"ActiveRecord: 0\" [$__range]))",
           "legendFormat": "Queries"
         }
       ]
@@ -296,7 +296,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "avg_over_time({job=\"rails\"} | regexp `Completed \\d+ \\w+ in (?P<duration>\\d+)ms` | unwrap duration [1h])",
+          "expr": "avg_over_time({job=\"rails\"} | regexp `Completed \\d+ \\w+ in (?P<duration>\\d+)ms` | unwrap duration [$__range])",
           "legendFormat": "Avg response"
         }
       ]

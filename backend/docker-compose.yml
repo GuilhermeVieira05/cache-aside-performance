@@ -8,6 +8,7 @@ services:
     volumes:
       - .:/rails
       - rails_logs:/rails/log
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - RAILS_ENV=development
       - RAILS_MASTER_KEY

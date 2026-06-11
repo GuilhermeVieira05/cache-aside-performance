@@ -18,6 +18,15 @@ console:
 migrate:
 	docker-compose run --rm web rails db:migrate
 
+seed:
+	docker-compose run --rm web rails db:seed
+
+reset-loki:
+	docker-compose stop loki promtail
+	docker volume rm backend_loki_data backend_rails_logs 2>/dev/null || true
+	docker-compose up -d loki promtail
+	@echo "Loki resetado. Dados anteriores apagados."
+
 reset:
 	docker-compose down -v
 	docker-compose up --build -d

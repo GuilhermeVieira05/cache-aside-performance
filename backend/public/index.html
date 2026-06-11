@@ -43,6 +43,19 @@
     }
     #reset-stats:hover { background: #666; }
 
+    #reset-loki {
+      padding: 6px 14px;
+      background: #7b2d8b;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.82rem;
+      transition: background 0.2s;
+    }
+    #reset-loki:hover:not(:disabled) { background: #9c3daf; }
+    #reset-loki:disabled { opacity: 0.5; cursor: not-allowed; }
+
     .layout { display: flex; height: calc(100vh - 52px); }
 
     main { flex: 1; padding: 24px; overflow-y: auto; min-width: 0; }
@@ -201,6 +214,7 @@
   <div class="header-actions">
     <button id="toggle-cache" class="on">Cache: ON</button>
     <button id="reset-stats">Reset Stats</button>
+    <button id="reset-loki">Reset Grafana</button>
   </div>
 </header>
 
@@ -415,6 +429,26 @@
     await fetch('/stats/reset', { method: 'POST' });
     fetchStats();
     showToast('POST', '/stats/reset', 0, 'RESET', true, 204);
+  });
+
+  document.getElementById('reset-loki').addEventListener('click', async () => {
+    const btn = document.getElementById('reset-loki');
+    btn.disabled = true;
+    btn.textContent = 'Resetando...';
+    try {
+      const res = await fetch('/observability/reset_loki', { method: 'POST' });
+      const d = await res.json();
+      if (res.ok) {
+        showToast('POST', '/observability/reset_loki', 0, 'GRAFANA RESET', true, 200);
+      } else {
+        showToast('POST', '/observability/reset_loki', 0, d.message || 'ERROR', false, res.status);
+      }
+    } catch (_) {
+      showToast('POST', '/observability/reset_loki', 0, 'ERROR', false, 0);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Reset Grafana';
+    }
   });
 
   initCacheToggle();
