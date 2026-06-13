@@ -1,26 +1,6 @@
-FROM ruby:3.3-slim
-
-RUN apt-get update -qq && \
-    apt-get install --no-install-recommends -y \
-    build-essential \
-    libpq-dev \
-    libyaml-dev \
-    git \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /rails
-
-ENV RAILS_ENV=development \
-    BUNDLE_PATH=/usr/local/bundle \
-    PATH=/usr/local/bundle/bin:$PATH
-
-COPY Gemfile Gemfile.lock ./
-RUN bundle install
-
-COPY . .
-
+FROM node:22-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
 EXPOSE 3000
-
-ENTRYPOINT ["/rails/bin/docker-entrypoint"]
-CMD ["./bin/rails", "server", "-b", "0.0.0.0"]
+CMD ["npm", "run", "start:dev"]
