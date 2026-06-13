@@ -9,12 +9,12 @@ clients:
   - url: http://loki:3100/loki/api/v1/push
 
 scrape_configs:
-  - job_name: rails
+  - job_name: nestjs
     static_configs:
       - targets:
           - localhost
         labels:
-          job: rails
+          job: nestjs
           env: development
           __path__: /logs/development.log
     pipeline_stages:
