@@ -67,19 +67,25 @@ async function seed() {
 
   const now = new Date();
 
-  // ── Customers (100) ──────────────────────────────────────────────────────
-  console.log('Criando 100 clientes...');
-  const customersData = Array.from({ length: 100 }, (_, i) => ({
-    name:       `${pick(FIRST_NAMES, i)} ${pick(LAST_NAMES, i)}`,
-    email:      `${pick(FIRST_NAMES, i).toLowerCase()}.${pick(LAST_NAMES, i).toLowerCase()}${i + 1}@exemplo.com`,
-    phone:      `(${10 + (i % 89)}) 9${(1000 + i * 7) % 9000 + 1000}-${(2000 + i * 13) % 9000 + 1000}`,
-    address:    `Rua ${pick(STREETS, i)}, ${(i * 7 + 1) % 999 + 1} - ${pick(CITIES, i)}`,
-    created_at: now,
-    updated_at: now,
-  }));
-
-  const custQ = buildInsert('customers', customersData);
-  await client.query(custQ.text + ' RETURNING id', custQ.values);
+  // ── Customers (10 000) ───────────────────────────────────────────────────
+  console.log('Criando 10000 clientes...');
+  const TOTAL_CUSTOMERS = 10_000;
+  const CUST_BATCH = 500;
+  for (let b = 0; b < TOTAL_CUSTOMERS / CUST_BATCH; b++) {
+    const rows = Array.from({ length: CUST_BATCH }, (_, j) => {
+      const i = b * CUST_BATCH + j;
+      return {
+        name:       `${pick(FIRST_NAMES, i)} ${pick(LAST_NAMES, i)}`,
+        email:      `${pick(FIRST_NAMES, i).toLowerCase()}.${pick(LAST_NAMES, i).toLowerCase()}${i + 1}@exemplo.com`,
+        phone:      `(${10 + (i % 89)}) 9${(1000 + i * 7) % 9000 + 1000}-${(2000 + i * 13) % 9000 + 1000}`,
+        address:    `Rua ${pick(STREETS, i)}, ${(i * 7 + 1) % 999 + 1} - ${pick(CITIES, i)}`,
+        created_at: now,
+        updated_at: now,
+      };
+    });
+    const q = buildInsert('customers', rows);
+    await client.query(q.text, q.values);
+  }
 
   const { rows: custRows } = await client.query('SELECT id FROM customers ORDER BY id');
   const customerIds = custRows.map(r => r.id);
@@ -110,9 +116,9 @@ async function seed() {
   const productPrices = Object.fromEntries(prodRows.map(r => [r.id, parseFloat(r.price)]));
   console.log(`  -> ${productIds.length} produtos criados`);
 
-  // ── Orders (20 000) ──────────────────────────────────────────────────────
-  console.log('Criando 20000 pedidos (lotes de 1000)...');
-  const TOTAL_ORDERS = 20_000;
+  // ── Orders (50 000) ──────────────────────────────────────────────────────
+  console.log('Criando 50000 pedidos (lotes de 1000)...');
+  const TOTAL_ORDERS = 50_000;
   const ORDER_BATCH  = 1_000;
 
   for (let b = 0; b < TOTAL_ORDERS / ORDER_BATCH; b++) {

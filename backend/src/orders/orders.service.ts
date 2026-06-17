@@ -10,6 +10,7 @@ import { Order, OrderStatus } from './order.entity.js';
 import { OrderItem } from './order-item.entity.js';
 import { Product } from '../products/product.entity.js';
 import { CacheService, DEFAULT_TTL, CacheStatus } from '../cache/cache.service.js';
+import { Paginated, PageParams, pageCacheKey, buildPaginated } from '../common/pagination.js';
 
 export interface OrderItemDto {
   id: string;
@@ -75,19 +76,17 @@ export class OrdersService {
     private readonly dataSource: DataSource,
   ) {}
 
-  async findAll(): Promise<[OrderDto[], CacheStatus]> {
-    const [result, status] = await this.cache.fetch<OrderDto[]>(
-      'orders:all',
-      DEFAULT_TTL,
-      async () => {
-        const orders = await this.orderRepo.find({
-          order: { id: 'ASC' },
-          relations: { orderItems: true },
-        });
-        return orders.map(toDto);
-      },
-    );
-    return [result, status];
+  async findAll(params: PageParams): Promise<[Paginated<OrderDto>, CacheStatus]> {
+    const key = pageCacheKey('orders', params);
+    return this.cache.fetch<Paginated<OrderDto>>(key, DEFAULT_TTL, async () => {
+      const [orders, total] = await this.orderRepo.findAndCount({
+        order: { id: 'ASC' },
+        relations: { orderItems: true },
+        skip: (params.page - 1) * params.pageSize,
+        take: params.pageSize,
+      });
+      return buildPaginated(orders.map(toDto), total, params);
+    });
   }
 
   async findOne(id: string): Promise<[OrderDto, CacheStatus]> {
@@ -159,7 +158,7 @@ export class OrdersService {
       return newOrder;
     });
 
-    await this.cache.invalidate('orders:all');
+    await this.cache.invalidatePattern('orders:page:*');
     return toDto(order);
   }
 
@@ -177,7 +176,8 @@ export class OrdersService {
     }
 
     await this.orderRepo.save(order);
-    await this.cache.invalidate('orders:all', `orders:${order.id}`);
+    await this.cache.invalidatePattern('orders:page:*');
+    await this.cache.invalidate(`orders:${order.id}`);
     return toDto(order);
   }
 
@@ -187,6 +187,7 @@ export class OrdersService {
       throw new NotFoundException(`Order not found`);
     }
     await this.orderRepo.remove(order);
-    await this.cache.invalidate('orders:all', `orders:${id}`);
+    await this.cache.invalidatePattern('orders:page:*');
+    await this.cache.invalidate(`orders:${id}`);
   }
 }

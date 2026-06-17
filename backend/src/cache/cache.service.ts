@@ -9,6 +9,7 @@ export const DEFAULT_TTL = parseInt(process.env.CACHE_TTL_SECONDS ?? '300', 10);
 
 export interface ICacheStatsService {
   incr(field: string, by?: number): Promise<void>;
+  recordTiming(category: 'hit' | 'miss' | 'nocache', ms: number): Promise<void>;
 }
 
 @Injectable()
@@ -39,23 +40,32 @@ export class CacheService {
     ttl: number,
     loader: () => Promise<T>,
   ): Promise<[T, CacheStatus]> {
+    const start = performance.now();
+
     if (!this.isEnabled()) {
       const result = await loader();
+      const elapsed = performance.now() - start;
+      await this.stats?.incr('db_queries');
+      await this.stats?.recordTiming('nocache', elapsed);
       return [result, 'DISABLED'];
     }
 
     try {
       const cached = await this.redis.get(key);
       if (cached !== null) {
+        const parsed = JSON.parse(cached) as T;
+        const elapsed = performance.now() - start;
         this.logger.log(`[CACHE HIT] key=${key}`);
         await this.stats?.incr('hits');
-        return [JSON.parse(cached) as T, 'HIT'];
+        await this.stats?.recordTiming('hit', elapsed);
+        return [parsed, 'HIT'];
       }
     } catch (err) {
       this.logger.warn(
         `[CACHE ERROR] key=${key} redis read failed: ${(err as Error).message}`,
       );
       const result = await loader();
+      await this.stats?.incr('db_queries');
       return [result, 'ERROR'];
     }
 
@@ -63,6 +73,7 @@ export class CacheService {
     await this.stats?.incr('misses');
 
     const result = await loader();
+    await this.stats?.incr('db_queries');
 
     try {
       await this.redis.set(key, JSON.stringify(result), 'EX', ttl);
@@ -72,6 +83,8 @@ export class CacheService {
       );
     }
 
+    const elapsed = performance.now() - start;
+    await this.stats?.recordTiming('miss', elapsed);
     return [result, 'MISS'];
   }
 
@@ -94,5 +107,30 @@ export class CacheService {
     if (keys.length > 0) {
       await this.stats?.incr('invalidations', keys.length);
     }
+  }
+
+  async invalidatePattern(pattern: string): Promise<number> {
+    if (!this.isEnabled()) {
+      return 0;
+    }
+
+    let cursor = '0';
+    let deleted = 0;
+    do {
+      const [next, keys] = await this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+      cursor = next;
+      if (keys.length > 0) {
+        await this.redis.del(...keys);
+        deleted += keys.length;
+        for (const k of keys) {
+          this.logger.log(`[CACHE INVALIDATE] key=${k}`);
+        }
+      }
+    } while (cursor !== '0');
+
+    if (deleted > 0) {
+      await this.stats?.incr('invalidations', deleted);
+    }
+    return deleted;
   }
 }
