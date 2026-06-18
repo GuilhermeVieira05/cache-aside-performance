@@ -57,6 +57,15 @@ services:
     networks:
       - app_network
 
+  redisinsight:
+    image: redis/redisinsight:latest
+    ports:
+      - "5540:5540"
+    depends_on:
+      - redis
+    networks:
+      - app_network
+
   promtail:
     image: grafana/promtail:2.9.0
     volumes:

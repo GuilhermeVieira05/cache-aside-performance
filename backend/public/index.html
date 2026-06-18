@@ -301,7 +301,27 @@
       <span class="stat-label">Invalidações</span>
       <span class="stat-value" id="stat-invalidations">—</span>
     </div>
-    <p class="stat-hint">Atualiza a cada 2s</p>
+    <div class="stat-item">
+      <span class="stat-label">Consultas ao banco</span>
+      <span class="stat-value" id="stat-db-queries">—</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-label">🟢 Tempo médio HIT</span>
+      <span class="stat-value" id="stat-avg-hit">—</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-label">🟡 Tempo médio MISS</span>
+      <span class="stat-value" id="stat-avg-miss">—</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-label">🔴 Tempo médio SQL sem cache</span>
+      <span class="stat-value" id="stat-avg-nocache">—</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-label">Ganho HIT vs banco</span>
+      <span class="stat-value" id="stat-gain">—</span>
+    </div>
+    <p class="stat-hint">Atualiza a cada 1s</p>
   </aside>
 </div>
 
@@ -321,6 +341,7 @@
 <script>
   let currentResource = null;
   let editingId = null;
+  let pages = { products: 1, customers: 1, orders: 1 };
 
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -393,10 +414,17 @@
       document.getElementById('stat-hit-rate').textContent     = d.hit_rate.toFixed(1) + '%';
       document.getElementById('stat-invalidations').textContent= d.invalidations;
       document.getElementById('hit-rate-fill').style.width     = d.hit_rate + '%';
+      document.getElementById('stat-db-queries').textContent    = d.db_queries;
+      document.getElementById('stat-avg-hit').textContent       = d.avg_ms_hit.toFixed(1) + ' ms';
+      document.getElementById('stat-avg-miss').textContent      = d.avg_ms_miss.toFixed(1) + ' ms';
+      document.getElementById('stat-avg-nocache').textContent   = d.avg_ms_nocache.toFixed(1) + ' ms';
+      const base = d.avg_ms_nocache || d.avg_ms_miss;
+      document.getElementById('stat-gain').textContent =
+        (d.avg_ms_hit > 0 && base > 0) ? '~' + (base / d.avg_ms_hit).toFixed(1) + 'x' : '—';
     } catch (_) {}
   }
   fetchStats();
-  setInterval(fetchStats, 2000);
+  setInterval(fetchStats, 1000);
 
   async function initCacheToggle() {
     try {
@@ -453,10 +481,54 @@
 
   initCacheToggle();
 
-  async function listAll(resource) {
-    const { data, ok } = await apiCall('GET', `/${resource}`);
-    showResult(resource, data, ok);
+  async function listAll(resource, page) {
+    if (page !== undefined) pages[resource] = page;
+    const { data: resp, ok } = await apiCall('GET', `/${resource}?page=${pages[resource]}&pageSize=50`);
+    if (ok && resp && Array.isArray(resp.data)) {
+      showResult(resource, resp.data, ok);
+      renderPagination(resource, resp);
+    } else {
+      showResult(resource, resp, ok);
+    }
     fetchStats();
+  }
+
+  function renderPagination(resource, resp) {
+    const resultBox = document.querySelector(`#tab-${resource} .result-box`);
+    const existingPager = resultBox.querySelector('.pagination-bar');
+    if (existingPager) existingPager.remove();
+
+    const bar = document.createElement('div');
+    bar.className = 'pagination-bar';
+    bar.style.cssText = 'display:flex;align-items:center;gap:10px;margin-top:10px;font-size:0.82rem;color:#666;';
+
+    const label = document.createElement('span');
+    label.textContent = `Mostrando ${resp.data.length} de ${resp.total}`;
+
+    const prevBtn = document.createElement('button');
+    prevBtn.className = 'btn btn-secondary';
+    prevBtn.textContent = '‹ Anterior';
+    prevBtn.style.padding = '4px 10px';
+    prevBtn.disabled = pages[resource] <= 1;
+    prevBtn.addEventListener('click', () => {
+      pages[resource] = Math.max(1, pages[resource] - 1);
+      listAll(resource);
+    });
+
+    const nextBtn = document.createElement('button');
+    nextBtn.className = 'btn btn-secondary';
+    nextBtn.textContent = 'Próxima ›';
+    nextBtn.style.padding = '4px 10px';
+    nextBtn.disabled = pages[resource] >= resp.totalPages;
+    nextBtn.addEventListener('click', () => {
+      pages[resource] = Math.min(resp.totalPages, pages[resource] + 1);
+      listAll(resource);
+    });
+
+    bar.appendChild(prevBtn);
+    bar.appendChild(label);
+    bar.appendChild(nextBtn);
+    resultBox.appendChild(bar);
   }
 
   async function getById(resource) {

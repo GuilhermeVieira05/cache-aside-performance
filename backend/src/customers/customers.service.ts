@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Customer } from './customer.entity.js';
 import { CacheService, DEFAULT_TTL, CacheStatus } from '../cache/cache.service.js';
+import { Paginated, PageParams, pageCacheKey, buildPaginated } from '../common/pagination.js';
 
 export interface CustomerDto {
   id: string;
@@ -88,16 +89,16 @@ export class CustomersService {
     private readonly cache: CacheService,
   ) {}
 
-  async findAll(): Promise<[CustomerDto[], CacheStatus]> {
-    const [result, status] = await this.cache.fetch<CustomerDto[]>(
-      'customers:all',
-      DEFAULT_TTL,
-      async () => {
-        const customers = await this.repo.find({ order: { id: 'ASC' } });
-        return customers.map(toDto);
-      },
-    );
-    return [result, status];
+  async findAll(params: PageParams): Promise<[Paginated<CustomerDto>, CacheStatus]> {
+    const key = pageCacheKey('customers', params);
+    return this.cache.fetch<Paginated<CustomerDto>>(key, DEFAULT_TTL, async () => {
+      const [customers, total] = await this.repo.findAndCount({
+        order: { id: 'ASC' },
+        skip: (params.page - 1) * params.pageSize,
+        take: params.pageSize,
+      });
+      return buildPaginated(customers.map(toDto), total, params);
+    });
   }
 
   async findOne(id: string): Promise<[CustomerDto, CacheStatus]> {
@@ -134,7 +135,7 @@ export class CustomersService {
       throw err;
     }
 
-    await this.cache.invalidate('customers:all');
+    await this.cache.invalidatePattern('customers:page:*');
     return toDto(customer);
   }
 
@@ -174,7 +175,8 @@ export class CustomersService {
       throw err;
     }
 
-    await this.cache.invalidate('customers:all', `customers:${customer.id}`);
+    await this.cache.invalidatePattern('customers:page:*');
+    await this.cache.invalidate(`customers:${customer.id}`);
     return toDto(customer);
   }
 
@@ -184,6 +186,7 @@ export class CustomersService {
       throw new NotFoundException(`Customer not found`);
     }
     await this.repo.remove(customer);
-    await this.cache.invalidate('customers:all', `customers:${id}`);
+    await this.cache.invalidatePattern('customers:page:*');
+    await this.cache.invalidate(`customers:${id}`);
   }
 }

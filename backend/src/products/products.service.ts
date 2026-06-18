@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Product } from './product.entity.js';
 import { CacheService, DEFAULT_TTL, CacheStatus } from '../cache/cache.service.js';
+import { Paginated, PageParams, pageCacheKey, buildPaginated } from '../common/pagination.js';
 
 export interface ProductDto {
   id: string;
@@ -93,16 +94,16 @@ export class ProductsService {
     private readonly cache: CacheService,
   ) {}
 
-  async findAll(): Promise<[ProductDto[], CacheStatus]> {
-    const [result, status] = await this.cache.fetch<ProductDto[]>(
-      'products:all',
-      DEFAULT_TTL,
-      async () => {
-        const products = await this.repo.find({ order: { id: 'ASC' } });
-        return products.map(toDto);
-      },
-    );
-    return [result, status];
+  async findAll(params: PageParams): Promise<[Paginated<ProductDto>, CacheStatus]> {
+    const key = pageCacheKey('products', params);
+    return this.cache.fetch<Paginated<ProductDto>>(key, DEFAULT_TTL, async () => {
+      const [products, total] = await this.repo.findAndCount({
+        order: { id: 'ASC' },
+        skip: (params.page - 1) * params.pageSize,
+        take: params.pageSize,
+      });
+      return buildPaginated(products.map(toDto), total, params);
+    });
   }
 
   async findOne(id: string): Promise<[ProductDto, CacheStatus]> {
@@ -133,7 +134,7 @@ export class ProductsService {
     });
 
     await this.repo.save(product);
-    await this.cache.invalidate('products:all');
+    await this.cache.invalidatePattern('products:page:*');
     return toDto(product);
   }
 
@@ -163,7 +164,8 @@ export class ProductsService {
     if (params.category !== undefined) product.category = params.category ?? null;
 
     await this.repo.save(product);
-    await this.cache.invalidate('products:all', `products:${product.id}`);
+    await this.cache.invalidatePattern('products:page:*');
+    await this.cache.invalidate(`products:${product.id}`);
     return toDto(product);
   }
 
@@ -173,6 +175,7 @@ export class ProductsService {
       throw new NotFoundException(`Product not found`);
     }
     await this.repo.remove(product);
-    await this.cache.invalidate('products:all', `products:${id}`);
+    await this.cache.invalidatePattern('products:page:*');
+    await this.cache.invalidate(`products:${id}`);
   }
 }

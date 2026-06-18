@@ -10,20 +10,26 @@ import {
   HttpCode,
   HttpStatus,
   Res,
+  Query,
 } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 import type { CreateProductBody, UpdateProductBody } from './products.service.js';
 import { ProductsService } from './products.service.js';
+import { parsePageParams } from '../common/pagination.js';
 
 @Controller('products')
 export class ProductsController {
   constructor(private readonly service: ProductsService) {}
 
   @Get()
-  async index(@Res({ passthrough: true }) res: FastifyReply) {
-    const [products, status] = await this.service.findAll();
+  async index(
+    @Query('page') page: string,
+    @Query('pageSize') pageSize: string,
+    @Res({ passthrough: true }) res: FastifyReply,
+  ) {
+    const [result, status] = await this.service.findAll(parsePageParams(page, pageSize));
     res.header('X-Cache', status);
-    return products;
+    return result;
   }
 
   @Get(':id')
