@@ -45,6 +45,7 @@ export class CacheService {
     if (!this.isEnabled()) {
       const result = await loader();
       const elapsed = performance.now() - start;
+      this.logger.log(`[CACHE DISABLED] key=${key} duration=${elapsed.toFixed(1)}ms`);
       await this.stats?.incr('db_queries');
       await this.stats?.recordTiming('nocache', elapsed);
       return [result, 'DISABLED'];
@@ -55,7 +56,7 @@ export class CacheService {
       if (cached !== null) {
         const parsed = JSON.parse(cached) as T;
         const elapsed = performance.now() - start;
-        this.logger.log(`[CACHE HIT] key=${key}`);
+        this.logger.log(`[CACHE HIT] key=${key} duration=${elapsed.toFixed(1)}ms`);
         await this.stats?.incr('hits');
         await this.stats?.recordTiming('hit', elapsed);
         return [parsed, 'HIT'];
@@ -69,7 +70,6 @@ export class CacheService {
       return [result, 'ERROR'];
     }
 
-    this.logger.log(`[CACHE MISS] key=${key}`);
     await this.stats?.incr('misses');
 
     const result = await loader();
@@ -84,6 +84,7 @@ export class CacheService {
     }
 
     const elapsed = performance.now() - start;
+    this.logger.log(`[CACHE MISS] key=${key} duration=${elapsed.toFixed(1)}ms`);
     await this.stats?.recordTiming('miss', elapsed);
     return [result, 'MISS'];
   }

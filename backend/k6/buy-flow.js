@@ -11,12 +11,16 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Trend, Counter, Rate } from 'k6/metrics';
-import { textSummary } from 'https://jslib.k6.io/k6-summary/0.0.1/index.js';
+
+// timeout padrão por request: evita que um request travado bloqueie o teste
+const REQ = { timeout: '15s' };
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:3000';
 const LABEL    = __ENV.LABEL    || 'run';
 const RATE     = parseInt(__ENV.RATE     || '80',   10);
 const BUY_PROB = parseFloat(__ENV.BUY_PROB || '0.25');
+const RAMP     = __ENV.RAMP    || '30s';   // duração de cada rampa
+const PLATEAU  = __ENV.PLATEAU || '120s';  // duração do platô (use curto p/ demo ao vivo)
 
 const browseCatalog  = new Trend('browse_catalog', true);
 const viewProduct    = new Trend('view_product',   true);
@@ -39,20 +43,23 @@ export const options = {
       preAllocatedVUs: 50,
       maxVUs:          200,
       stages: [
-        { target: 20,   duration: '30s'  },
-        { target: RATE, duration: '30s'  },
-        { target: RATE, duration: '120s' },
-        { target: 0,    duration: '10s'  },
+        { target: Math.min(20, RATE), duration: RAMP },
+        { target: RATE, duration: RAMP    },
+        { target: RATE, duration: PLATEAU },
+        { target: 0,    duration: '5s'    },
       ],
     },
   },
 };
 
 export function setup() {
-  const products  = http.get(`${BASE_URL}/products`).json()  || [];
-  const customers = http.get(`${BASE_URL}/customers`).json() || [];
-  const productIds  = products.map((p) => p.id);
-  const customerIds = customers.map((c) => c.id);
+  const products  = http.get(`${BASE_URL}/products?page=1&pageSize=200`, REQ).json();
+  const customers = http.get(`${BASE_URL}/customers?page=1&pageSize=200`, REQ).json();
+  // API paginada retorna { data: [...] }; mantém compat. com resposta em array puro
+  const productList  = Array.isArray(products)  ? products  : (products?.data  ?? []);
+  const customerList = Array.isArray(customers) ? customers : (customers?.data ?? []);
+  const productIds  = productList.map((p) => p.id);
+  const customerIds = customerList.map((c) => c.id);
   if (productIds.length === 0 || customerIds.length === 0) {
     throw new Error('Setup falhou: rode `make seed` antes do teste.');
   }
@@ -71,7 +78,7 @@ export default function (data) {
   const { productIds, customerIds } = data;
 
   // 1) Navegar catálogo
-  let res = http.get(`${BASE_URL}/products`, { tags: { step: 'browse_catalog' } });
+  let res = http.get(`${BASE_URL}/products`, { ...REQ, tags: { step: 'browse_catalog' } });
   check(res, { 'browse 200': (r) => r.status === 200 });
   browseCatalog.add(res.timings.duration);
   thinkTime();
@@ -79,14 +86,14 @@ export default function (data) {
   // 2) Ver 1–2 produtos
   const views = 1 + Math.floor(Math.random() * 2);
   for (let i = 0; i < views; i++) {
-    res = http.get(`${BASE_URL}/products/${pick(productIds)}`, { tags: { step: 'view_product' } });
+    res = http.get(`${BASE_URL}/products/${pick(productIds)}`, { ...REQ, tags: { step: 'view_product' } });
     check(res, { 'view 200': (r) => r.status === 200 });
     viewProduct.add(res.timings.duration);
     thinkTime();
   }
 
   // 3) Ver lista de pedidos
-  res = http.get(`${BASE_URL}/orders`, { tags: { step: 'list_orders' } });
+  res = http.get(`${BASE_URL}/orders`, { ...REQ, tags: { step: 'list_orders' } });
   check(res, { 'orders 200': (r) => r.status === 200 });
   listOrders.add(res.timings.duration);
   thinkTime();
@@ -103,6 +110,7 @@ export default function (data) {
       order_items_attributes: items,
     });
     res = http.post(`${BASE_URL}/orders`, payload, {
+      ...REQ,
       headers: { 'Content-Type': 'application/json' },
       tags: { step: 'checkout' },
     });
@@ -114,8 +122,13 @@ export default function (data) {
 }
 
 export function handleSummary(data) {
+  const d = data.metrics.http_req_duration.values;
+  const reqs = data.metrics.http_reqs.values;
+  const line =
+    `\n[${LABEL}] reqs=${reqs.count} rps=${reqs.rate.toFixed(1)} ` +
+    `med=${d.med.toFixed(1)}ms p95=${d['p(95)'].toFixed(1)}ms p99=${d['p(99)'].toFixed(1)}ms\n`;
   return {
-    stdout: textSummary(data, { indent: ' ', enableColors: true }),
+    stdout: line,
     [`/results/summary-${LABEL}.json`]: JSON.stringify(data, null, 2),
   };
 }

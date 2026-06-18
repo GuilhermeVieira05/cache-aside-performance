@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cache Aside e Performance de APIs</title>
+<style>
+:root {
+  --purple:#7c3aed; --blue:#2563eb;
+  --grad:linear-gradient(135deg,#7c3aed,#2563eb);
+  --bg:#f8fafc; --surface:#fff; --text:#1e293b; --muted:#64748b;
+  --green:#059669; --red:#dc2626; --amber:#d97706; --border:#e2e8f0;
+  --code-bg:#0f172a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#18181b;display:flex;align-items:center;justify-content:center;min-height:100vh;overflow:hidden}
+.deck{width:100vw;height:100vh;position:relative}
+.slide{position:absolute;inset:0;background:var(--bg);display:none;flex-direction:column;padding:48px 64px 52px;opacity:0;transition:opacity .25s}
+.slide.active{display:flex;opacity:1}
+
+/* Nav */
+.nav{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:14px;z-index:100;background:rgba(15,15,25,.85);backdrop-filter:blur(8px);border-radius:32px;padding:9px 20px}
+.nav button{background:var(--grad);border:none;color:#fff;width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;transition:opacity .2s}
+.nav button:disabled{opacity:.3;cursor:default}
+#counter{color:#94a3b8;font-size:13px;min-width:54px;text-align:center}
+.progress{position:fixed;top:0;left:0;height:3px;background:var(--grad);transition:width .3s;z-index:200}
+
+/* Typography */
+.label{font-size:11px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--purple);margin-bottom:8px}
+h2{font-size:32px;font-weight:800;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;border-bottom:3px solid var(--purple);padding-bottom:10px;margin-bottom:20px}
+h3{font-size:17px;font-weight:700;color:var(--text);margin-bottom:6px}
+p{color:var(--muted);font-size:15px;line-height:1.6}
+li{color:var(--muted);font-size:15px;line-height:1.6}
+strong{color:var(--text);font-weight:700}
+code{font-family:'Cascadia Code','Fira Code',monospace;font-size:13px;background:#ede9fe;color:var(--purple);padding:1px 5px;border-radius:4px}
+
+/* Cards */
+.cards{display:flex;gap:16px;flex:1}
+.card{flex:1;background:var(--surface);border-radius:14px;border:1px solid var(--border);padding:22px 24px;box-shadow:0 2px 10px rgba(124,58,237,.05);display:flex;flex-direction:column;gap:10px}
+.card-icon{font-size:28px}
+
+/* Badges */
+.badge{display:inline-block;padding:3px 11px;border-radius:99px;font-size:12px;font-weight:700;letter-spacing:.3px}
+.b-hit{background:#d1fae5;color:var(--green)}
+.b-miss{background:#fef3c7;color:var(--amber)}
+.b-inv{background:#fee2e2;color:var(--red)}
+.b-dis{background:#ede9fe;color:var(--purple)}
+
+/* Tables */
+table{width:100%;border-collapse:collapse;font-size:15px}
+thead tr{background:var(--grad)}
+thead th{color:#fff;padding:11px 16px;text-align:left;font-weight:600}
+thead th:not(:first-child){text-align:center}
+tbody tr:nth-child(even){background:#f1f5f9}
+tbody td{padding:10px 16px;color:var(--text)}
+tbody td:not(:first-child){text-align:center}
+.good{color:var(--green);font-weight:700}
+.bad{color:var(--red);font-weight:700}
+.delta{color:var(--green);font-weight:800;font-size:17px}
+
+/* Code */
+.code-wrap{background:var(--code-bg);border-radius:12px;padding:22px 24px;flex:1;overflow:auto}
+pre{font-family:'Cascadia Code','Fira Code',monospace;font-size:12px;line-height:1.52;color:#e2e8f0;white-space:pre}
+.kw{color:#c084fc}.fn{color:#60a5fa}.str{color:#4ade80}.cm{color:#475569;font-style:italic}.hl{background:rgba(124,58,237,.3);border-radius:3px;padding:0 3px}
+
+/* Misc */
+.check-list{list-style:none;display:flex;flex-direction:column;gap:10px}
+.check-list li{display:flex;align-items:flex-start;gap:9px}
+.check-list li::before{content:'✓';color:var(--purple);font-weight:900;font-size:16px;margin-top:1px;flex-shrink:0}
+.two-col{display:flex;gap:24px;flex:1}
+.col{flex:1;display:flex;flex-direction:column;gap:14px}
+.info-row{background:var(--surface);border-radius:10px;border-left:4px solid var(--purple);padding:14px 18px;display:flex;flex-direction:column;gap:5px}
+.metric-big{flex:1;background:var(--surface);border-radius:14px;border:2px solid var(--border);padding:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+.metric-num{font-size:54px;font-weight:800}
+.metric-label{font-size:14px;color:var(--muted);margin-top:4px;line-height:1.4}
+.tradeoff{background:var(--surface);border-radius:10px;border-left:4px solid var(--purple);padding:14px 18px;flex:1;display:flex;flex-direction:column;gap:5px}
+.tradeoff h4{font-size:15px;font-weight:700;color:var(--text)}
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<div class="deck" id="deck">
+
+<!-- ══════════════ S1 — CAPA ══════════════ -->
+<div class="slide active" id="s1" style="padding:0;overflow:hidden;background:var(--bg)">
+  <!-- Left panel -->
+  <div style="display:flex;flex:1;height:100%">
+    <div style="flex:1.1;display:flex;flex-direction:column;justify-content:center;padding:56px 52px;gap:22px;background:#fff;z-index:2;box-shadow:4px 0 40px rgba(0,0,0,.07)">
+      <div style="display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,#ede9fe,#dbeafe);border:1px solid #c4b5fd;border-radius:99px;padding:5px 16px;font-size:12px;font-weight:700;color:var(--purple);width:fit-content">
+        🏛️ Arquitetura de Software · PUC Minas
+      </div>
+      <div>
+        <div class="label">Trabalho Prático</div>
+        <div style="font-size:54px;font-weight:900;line-height:1.05;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Cache Aside<br>e Performance<br>de APIs</div>
+      </div>
+      <p style="font-size:18px;max-width:440px;color:var(--muted);line-height:1.6">Uma camada de memória que corta <strong>~90% das consultas ao banco</strong> e responde em <strong>~1 ms</strong> — protegendo o banco e estabilizando a latência sob carga, sem mudar a infraestrutura.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
+        <span class="badge" style="background:#ede9fe;color:var(--purple);font-size:13px;padding:6px 14px">NestJS + Fastify</span>
+        <span class="badge" style="background:#d1fae5;color:var(--green);font-size:13px;padding:6px 14px">Redis</span>
+        <span class="badge" style="background:#fef3c7;color:var(--amber);font-size:13px;padding:6px 14px">PostgreSQL</span>
+        <span class="badge" style="background:#dbeafe;color:var(--blue);font-size:13px;padding:6px 14px">Grafana · k6</span>
+      </div>
+    </div>
+
+    <!-- Right panel — visual -->
+    <div style="flex:1;background:linear-gradient(160deg,#1e1b4b 0%,#312e81 40%,#1d4ed8 100%);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden">
+      <!-- Glow circles -->
+      <div style="position:absolute;width:400px;height:400px;background:radial-gradient(circle,rgba(124,58,237,.5),transparent 70%);top:-80px;right:-80px;border-radius:50%"></div>
+      <div style="position:absolute;width:300px;height:300px;background:radial-gradient(circle,rgba(37,99,235,.4),transparent 70%);bottom:-60px;left:-60px;border-radius:50%"></div>
+
+      <!-- Cache flow diagram -->
+      <svg width="340" height="420" viewBox="0 0 340 420" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- Client -->
+        <rect x="110" y="16" width="120" height="56" rx="12" fill="rgba(255,255,255,.15)" stroke="rgba(255,255,255,.4)" stroke-width="1.5"/>
+        <text x="170" y="39" text-anchor="middle" font-size="22">🌐</text>
+        <text x="170" y="59" text-anchor="middle" font-size="12" fill="white" font-weight="700">Cliente</text>
+        <!-- Arrow -->
+        <line x1="170" y1="72" x2="170" y2="108" stroke="rgba(255,255,255,.5)" stroke-width="1.5" stroke-dasharray="4"/>
+        <polygon points="163,105 170,118 177,105" fill="rgba(255,255,255,.5)"/>
+        <!-- API -->
+        <rect x="75" y="118" width="190" height="56" rx="12" fill="rgba(167,139,250,.25)" stroke="#a78bfa" stroke-width="2"/>
+        <text x="170" y="141" text-anchor="middle" font-size="22">⚡</text>
+        <text x="170" y="160" text-anchor="middle" font-size="12" fill="white" font-weight="700">NestJS API</text>
+        <!-- Arrow to Redis -->
+        <line x1="110" y1="174" x2="62" y2="232" stroke="#4ade80" stroke-width="2"/>
+        <polygon points="56,228 60,242 70,233" fill="#4ade80"/>
+        <text x="44" y="212" text-anchor="middle" font-size="10" fill="#4ade80" font-weight="700">check</text>
+        <!-- Arrow to PG (dashed = only on miss) -->
+        <line x1="230" y1="174" x2="278" y2="232" stroke="#f87171" stroke-width="1.5" stroke-dasharray="5,3"/>
+        <polygon points="270,230 280,242 283,228" fill="#f87171"/>
+        <text x="298" y="212" text-anchor="middle" font-size="10" fill="#f87171" font-weight="700">MISS</text>
+        <!-- Redis -->
+        <rect x="12" y="242" width="120" height="62" rx="12" fill="rgba(74,222,128,.2)" stroke="#4ade80" stroke-width="2"/>
+        <text x="72" y="267" text-anchor="middle" font-size="24">🔴</text>
+        <text x="72" y="289" text-anchor="middle" font-size="12" fill="white" font-weight="700">Redis · RAM</text>
+        <!-- Postgres -->
+        <rect x="208" y="242" width="120" height="62" rx="12" fill="rgba(251,191,36,.15)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="268" y="267" text-anchor="middle" font-size="24">🐘</text>
+        <text x="268" y="289" text-anchor="middle" font-size="12" fill="white" font-weight="700">PostgreSQL</text>
+        <!-- HIT return -->
+        <line x1="72" y1="242" x2="110" y2="174" stroke="#4ade80" stroke-width="2"/>
+        <polygon points="103,178 112,166 118,178" fill="#4ade80"/>
+        <text x="58" y="218" text-anchor="middle" font-size="9" fill="#4ade80" font-weight="700">HIT ✓</text>
+        <!-- SET arrow PG→Redis -->
+        <line x1="208" y1="272" x2="134" y2="272" stroke="#60a5fa" stroke-width="1.5" stroke-dasharray="4,3"/>
+        <polygon points="137,266 124,272 137,278" fill="#60a5fa"/>
+        <text x="171" y="315" text-anchor="middle" font-size="10" fill="#60a5fa" font-weight="700">SET(TTL)</text>
+        <!-- Latency labels -->
+        <rect x="12" y="316" width="120" height="28" rx="6" fill="rgba(74,222,128,.15)"/>
+        <text x="72" y="334" text-anchor="middle" font-size="11" fill="#4ade80" font-weight="700">~0,1 ms · RAM</text>
+        <rect x="208" y="316" width="120" height="28" rx="6" fill="rgba(248,113,113,.15)"/>
+        <text x="268" y="334" text-anchor="middle" font-size="11" fill="#f87171" font-weight="700">~10–100 ms · disco</text>
+        <!-- Legend -->
+        <text x="170" y="376" text-anchor="middle" font-size="11" fill="rgba(255,255,255,.6)">— sempre  - - somente no MISS</text>
+      </svg>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ S2 — PROBLEMA ══════════════ -->
+<div class="slide" id="s2">
+  <div class="label">Contexto</div>
+  <h2>O Problema</h2>
+  <div class="cards">
+
+    <div class="card" style="border-top:3px solid var(--red)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:24px">📈</span>
+        <h3 style="margin-bottom:0">Consultas Repetitivas</h3>
+      </div>
+      <p>A mesma listagem é consultada milhares de vezes por hora. Cada vez, o banco executa um <strong>SELECT + JOINs do zero</strong> — sem reaproveitar nenhum resultado anterior.</p>
+      <div style="flex:1;display:flex;align-items:center;justify-content:center;background:#fef2f2;border-radius:10px">
+        <div style="text-align:center;padding:12px">
+          <div style="font-size:56px;font-weight:900;color:var(--red);line-height:1">200×</div>
+          <div style="font-size:13px;color:var(--muted);margin-top:6px">o mesmo SELECT<br>rodando simultaneamente</div>
+        </div>
+      </div>
+      <div style="background:#fff;border:1px solid #fecaca;border-radius:8px;padding:10px 14px">
+        <div style="font-size:13px;color:var(--red);font-weight:700">Sem cache: toda requisição = 1 query nova</div>
+        <div style="font-size:12px;color:var(--muted)">200 usuários = 200 queries idênticas ao mesmo tempo</div>
+      </div>
+    </div>
+
+    <div class="card" style="border-top:3px solid var(--amber)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:24px">⏱️</span>
+        <h3 style="margin-bottom:0">Latência Inaceitável</h3>
+      </div>
+      <p>Sob saturação (200 usuários), sem cache a latência média chegou a <strong class="bad">~230 ms</strong> e o p95 a <strong class="bad">~690 ms</strong> — e piora conforme a fila no banco cresce.</p>
+      <div style="flex:1;display:flex;align-items:center;justify-content:center;gap:10px">
+        <div style="background:#fef2f2;border-radius:10px;padding:14px 18px;text-align:center;flex:1">
+          <div style="font-size:34px;font-weight:900;color:var(--red);line-height:1">~230ms</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px">latência média</div>
+        </div>
+        <div style="background:#fef2f2;border-radius:10px;padding:14px 18px;text-align:center;flex:1">
+          <div style="font-size:34px;font-weight:900;color:var(--red);line-height:1">~690ms</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px">latência p95</div>
+        </div>
+        <div style="background:#fef2f2;border-radius:10px;padding:14px 18px;text-align:center;flex:1">
+          <div style="font-size:34px;font-weight:900;color:var(--red);line-height:1">~990ms</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px">latência p99</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="border-top:3px solid var(--purple)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:24px">💣</span>
+        <h3 style="margin-bottom:0">Banco Sobrecarregado</h3>
+      </div>
+      <p>Sob carga, sem cache o banco recebeu <strong>~38 mil consultas</strong> em apenas 3 minutos. Toda requisição bate no banco — mesmo que o resultado seja idêntico ao anterior.</p>
+      <div style="flex:1;display:flex;align-items:center;justify-content:center;background:#faf5ff;border-radius:10px">
+        <div style="text-align:center;padding:12px">
+          <div style="font-size:56px;font-weight:900;color:var(--purple);line-height:1">~38 mil</div>
+          <div style="font-size:13px;color:var(--muted);margin-top:6px">consultas ao banco<br>em 3 min de carga</div>
+        </div>
+      </div>
+      <div style="background:#fff;border:1px solid #e9d5ff;border-radius:8px;padding:10px 14px">
+        <div style="font-size:12px;color:var(--purple);font-weight:700;margin-bottom:2px">Cada query consome:</div>
+        <div style="font-size:12px;color:var(--muted)">Parse SQL → plano → disco → lock → rede → serialização</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════ S3 — POR QUE CACHE É RÁPIDO ══════════════ -->
+<div class="slide" id="s3">
+  <div class="label">Fundamentos</div>
+  <h2>Por que o cache é mais rápido?</h2>
+  <p style="margin-bottom:20px">Tudo é sobre <strong>onde os dados estão fisicamente</strong>. Cada nível da hierarquia de memória tem latência radicalmente diferente:</p>
+
+  <div style="display:flex;flex-direction:column;gap:12px;flex:1;justify-content:space-evenly">
+    <div style="display:flex;align-items:center;gap:16px;background:#faf5ff;border-radius:10px;padding:14px 18px">
+      <div style="width:180px;font-weight:700;font-size:15px;color:var(--text)">🔵 L1/L2 CPU Cache</div>
+      <div style="flex:1;background:#e2e8f0;border-radius:99px;height:22px;overflow:hidden"><div style="width:0.5%;height:100%;background:var(--purple);border-radius:99px"></div></div>
+      <div style="width:110px;text-align:right;font-size:15px;font-weight:800;color:var(--purple)">1 – 4 ns</div>
+      <div style="width:140px;text-align:right;font-size:13px;color:var(--muted)">dentro do chip</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px;background:#eff6ff;border-radius:10px;padding:14px 18px">
+      <div style="width:180px;font-weight:700;font-size:15px;color:var(--text)">🟢 RAM (Redis)</div>
+      <div style="flex:1;background:#e2e8f0;border-radius:99px;height:22px;overflow:hidden"><div style="width:2%;height:100%;background:var(--blue);border-radius:99px"></div></div>
+      <div style="width:110px;text-align:right;font-size:15px;font-weight:800;color:var(--blue)">~100 ns</div>
+      <div style="width:140px;text-align:right;font-size:13px;color:var(--muted)">memória principal</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px;background:#fff7ed;border-radius:10px;padding:14px 18px">
+      <div style="width:180px;font-weight:700;font-size:15px;color:var(--text)">🟡 SSD NVMe</div>
+      <div style="flex:1;background:#e2e8f0;border-radius:99px;height:22px;overflow:hidden"><div style="width:20%;height:100%;background:var(--amber);border-radius:99px"></div></div>
+      <div style="width:110px;text-align:right;font-size:15px;font-weight:800;color:var(--amber)">~100 µs</div>
+      <div style="width:140px;text-align:right;font-size:13px;color:var(--muted)">1.000× mais lento</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px;background:#fef2f2;border-radius:10px;padding:14px 18px">
+      <div style="width:180px;font-weight:700;font-size:15px;color:var(--text)">🔴 PostgreSQL query</div>
+      <div style="flex:1;background:#e2e8f0;border-radius:99px;height:22px;overflow:hidden"><div style="width:100%;height:100%;background:var(--red);border-radius:99px"></div></div>
+      <div style="width:110px;text-align:right;font-size:15px;font-weight:800;color:var(--red)">10 – 100 ms</div>
+      <div style="width:140px;text-align:right;font-size:13px;color:var(--muted)">parse + disco + rede</div>
+    </div>
+  </div>
+
+  <div style="background:var(--surface);border-radius:12px;border-left:4px solid var(--purple);padding:16px 20px;margin-top:16px;display:flex;gap:16px;align-items:center">
+    <span style="font-size:28px">💡</span>
+    <p>O Redis armazena tudo <strong>em RAM</strong> — sem parsing SQL, sem planejamento de query, sem acesso a disco, sem locks. Um GET no Redis custa 100 nanosegundos. Uma query no Postgres custa até <strong>100.000× mais</strong>.</p>
+  </div>
+</div>
+
+<!-- ══════════════ S3B — ARQUITETURA DO REDIS ══════════════ -->
+<div class="slide" id="s-redis">
+  <div class="label">Fundamentos</div>
+  <h2>Por dentro do Redis — não é só RAM</h2>
+  <p style="margin-bottom:18px">A memória explica a velocidade bruta, mas é a <strong>arquitetura do Redis</strong> que elimina os gargalos que tornam um banco relacional lento sob carga:</p>
+
+  <div class="cards">
+    <div class="card" style="border-top:3px solid var(--purple)">
+      <div class="card-icon">🧵</div>
+      <h3>Single-thread, sem locks</h3>
+      <p>Um único <strong>loop de eventos</strong> executa um comando por vez, de forma atômica. Sem locks, sem troca de contexto, sem condições de corrida — justamente o gargalo que derruba bancos sob alta concorrência.</p>
+    </div>
+    <div class="card" style="border-top:3px solid var(--blue)">
+      <div class="card-icon">🗂️</div>
+      <h3>Estruturas em memória</h3>
+      <p>Strings, hashes e sorted sets nativos, escritos em C com operações <strong>O(1)</strong>. Buscar uma chave é um lookup direto numa hash table — nada de varrer linhas ou percorrer índices em disco.</p>
+    </div>
+    <div class="card" style="border-top:3px solid var(--green)">
+      <div class="card-icon">🚫</div>
+      <h3>Sem query planner</h3>
+      <p>Não há SQL para interpretar nem otimizador escolhendo plano de execução. A etapa <strong>parse → plano → execução</strong> do PostgreSQL simplesmente não existe: o acesso é direto pela chave.</p>
+    </div>
+    <div class="card" style="border-top:3px solid var(--amber)">
+      <div class="card-icon">🔌</div>
+      <h3>I/O multiplexado</h3>
+      <p>Uma só thread atende milhares de conexões com I/O não-bloqueante (<code>epoll</code>). Com <strong>pipelining</strong>, vários comandos viajam numa única ida-e-volta de rede, amortizando a latência.</p>
+    </div>
+  </div>
+
+  <div style="background:var(--surface);border-radius:12px;border-left:4px solid var(--purple);padding:16px 20px;margin-top:16px;display:flex;gap:16px;align-items:center">
+    <span style="font-size:28px">⚙️</span>
+    <p>RAM é só metade da história. É a <strong>ausência de parsing SQL, locks e disco</strong> — somada a estruturas O(1) e a um modelo single-thread atômico — que faz cada <code>GET</code> custar ~100 ns de forma previsível, mesmo com milhares de clientes simultâneos.</p>
+  </div>
+</div>
+
+<!-- ══════════════ S4 — CACHE ASIDE FLUXO ══════════════ -->
+<div class="slide" id="s4" style="padding:36px 64px 40px">
+  <div class="label">Padrão Arquitetural</div>
+  <h2>Cache Aside — o fluxo</h2>
+  <div style="display:flex;gap:32px;flex:1">
+
+    <!-- Cards -->
+    <div style="flex:1.2;display:flex;flex-direction:column;gap:12px">
+      <div class="card" style="border-left:4px solid var(--green);flex:1;padding:14px 18px;gap:8px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <span class="badge b-hit" style="font-size:13px;padding:4px 12px">CACHE HIT</span>
+          <span style="color:var(--muted);font-size:13px">dado está no Redis</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:14px;flex-wrap:wrap;margin-bottom:10px">
+          <span>Cliente</span><span style="color:var(--purple);font-weight:700">→</span>
+          <span>API</span><span style="color:var(--purple);font-weight:700">→</span>
+          <span style="font-weight:700;color:var(--green)">Redis ✓</span><span style="color:var(--purple);font-weight:700">→</span>
+          <span>resposta</span>
+        </div>
+        <div style="background:#f0fdf4;border-radius:8px;padding:10px 12px;margin-top:auto">
+          <div style="font-size:13px;color:var(--green);font-weight:700">Banco não é consultado.</div>
+          <div style="font-size:13px;color:var(--muted)">Dado retornado direto da RAM em ~0,1 ms. Header: <code>X-Cache: HIT</code></div>
+        </div>
+      </div>
+
+      <div class="card" style="border-left:4px solid var(--amber);flex:1;padding:14px 18px;gap:8px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <span class="badge b-miss" style="font-size:13px;padding:4px 12px">CACHE MISS</span>
+          <span style="color:var(--muted);font-size:13px">dado não está no Redis</span>
+        </div>
+        <div style="font-size:13px;line-height:1.6;margin-bottom:8px">
+          Cliente → API → Redis ✗<br>
+          → <strong>PostgreSQL</strong> (executa query)<br>
+          → <strong>Redis.SET</strong> (armazena com TTL 300s)<br>
+          → resposta ao cliente
+        </div>
+        <div style="background:#fefce8;border-radius:8px;padding:10px 12px;margin-top:auto">
+          <div style="font-size:13px;color:var(--amber);font-weight:700">Banco consultado uma vez.</div>
+          <div style="font-size:13px;color:var(--muted)">Próximas leituras serão HIT. Header: <code>X-Cache: MISS</code></div>
+        </div>
+      </div>
+
+      <div class="card" style="border-left:4px solid var(--red);flex:1;padding:14px 18px;gap:8px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <span class="badge b-inv" style="font-size:13px;padding:4px 12px">INVALIDAÇÃO</span>
+          <span style="color:var(--muted);font-size:13px">PUT ou DELETE</span>
+        </div>
+        <div style="font-size:13px;line-height:1.6;margin-bottom:8px">
+          Escrita → API → <strong>PostgreSQL</strong> (atualiza)<br>
+          → <strong>Redis.DEL</strong> (remove chaves afetadas)<br>
+          → próxima leitura será MISS com dado atualizado
+        </div>
+        <div style="background:#fef2f2;border-radius:8px;padding:10px 12px;margin-top:auto">
+          <div style="font-size:13px;color:var(--red);font-weight:700">Consistência garantida pós-escrita.</div>
+          <div style="font-size:13px;color:var(--muted)">Nenhum dado desatualizado fica no cache após uma modificação.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SVG -->
+    <div style="flex:1;display:flex;align-items:center;justify-content:center;background:linear-gradient(160deg,#1e1b4b,#1e3a8a);border-radius:18px;padding:20px">
+      <svg width="260" height="370" viewBox="0 0 260 370" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="80" y="10" width="100" height="48" rx="10" fill="rgba(255,255,255,.15)" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/>
+        <text x="130" y="30" text-anchor="middle" font-size="18">🌐</text>
+        <text x="130" y="48" text-anchor="middle" font-size="11" fill="white" font-weight="700">Cliente</text>
+        <line x1="130" y1="58" x2="130" y2="92" stroke="rgba(255,255,255,.4)" stroke-width="1.5" stroke-dasharray="3"/>
+        <polygon points="124,89 130,100 136,89" fill="rgba(255,255,255,.4)"/>
+        <rect x="55" y="100" width="150" height="48" rx="10" fill="rgba(167,139,250,.25)" stroke="#a78bfa" stroke-width="2"/>
+        <text x="130" y="120" text-anchor="middle" font-size="18">⚡</text>
+        <text x="130" y="138" text-anchor="middle" font-size="11" fill="white" font-weight="700">NestJS API</text>
+        <!-- to Redis -->
+        <line x1="80" y1="148" x2="48" y2="210" stroke="#4ade80" stroke-width="2"/>
+        <polygon points="42,206 46,220 56,211" fill="#4ade80"/>
+        <!-- to Postgres (dashed) -->
+        <line x1="180" y1="148" x2="212" y2="210" stroke="#f87171" stroke-width="1.5" stroke-dasharray="5"/>
+        <polygon points="204,208 214,220 217,206" fill="#f87171"/>
+        <!-- Redis box -->
+        <rect x="8" y="220" width="100" height="56" rx="10" fill="rgba(74,222,128,.2)" stroke="#4ade80" stroke-width="2"/>
+        <text x="58" y="244" text-anchor="middle" font-size="20">🔴</text>
+        <text x="58" y="262" text-anchor="middle" font-size="11" fill="white" font-weight="700">Redis</text>
+        <!-- Postgres box -->
+        <rect x="152" y="220" width="100" height="56" rx="10" fill="rgba(251,191,36,.15)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="202" y="244" text-anchor="middle" font-size="20">🐘</text>
+        <text x="202" y="262" text-anchor="middle" font-size="11" fill="white" font-weight="700">PostgreSQL</text>
+        <!-- HIT return -->
+        <line x1="58" y1="220" x2="88" y2="148" stroke="#4ade80" stroke-width="2"/>
+        <polygon points="82,152 90,140 96,152" fill="#4ade80"/>
+        <!-- SET -->
+        <line x1="152" y1="248" x2="110" y2="248" stroke="#60a5fa" stroke-width="1.5" stroke-dasharray="4"/>
+        <polygon points="113,242 100,248 113,254" fill="#60a5fa"/>
+        <text x="131" y="244" text-anchor="middle" font-size="9" fill="#60a5fa" font-weight="700">SET</text>
+        <!-- latency -->
+        <text x="58" y="295" text-anchor="middle" font-size="10" fill="#4ade80" font-weight="700">~0,1 ms</text>
+        <text x="202" y="295" text-anchor="middle" font-size="10" fill="#f87171" font-weight="700">~10–100 ms</text>
+        <!-- labels -->
+        <text x="24" y="338" font-size="9" fill="rgba(255,255,255,.5)">── sempre presente</text>
+        <text x="24" y="352" font-size="9" fill="rgba(255,255,255,.5)">- - somente no MISS</text>
+      </svg>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ S5 — ARQUITETURA ══════════════ -->
+<div class="slide" id="s5">
+  <div class="label">Solução</div>
+  <h2>Arquitetura da Solução</h2>
+  <div class="two-col">
+    <div class="col">
+      <div class="card" style="border-top:3px solid var(--purple);flex:1">
+        <h3>🌐 Frontend</h3>
+        <p>SPA servida pelo próprio NestJS. Permite CRUD completo com visualização em tempo real dos headers <code>X-Cache</code> e das estatísticas de hit/miss.</p>
+        <div style="background:#faf5ff;border-radius:8px;padding:10px 12px;margin-top:auto;font-size:13px;color:var(--muted)"><code>localhost:3000</code> · Toggle de cache · Reset de stats</div>
+      </div>
+      <div class="card" style="border-top:3px solid var(--purple);flex:1">
+        <h3>⚡ NestJS + Fastify</h3>
+        <p><strong>CacheService</strong> centralizado: toda leitura passa pelo cache, toda escrita invalida. Fastify adapter ~30% mais rápido que Express.</p>
+        <div style="background:#faf5ff;border-radius:8px;padding:10px 12px;margin-top:auto;font-size:13px;color:var(--muted)">TypeORM · ioredis · <code>@BeforeInsert</code> · <code>@Global()</code></div>
+      </div>
+      <div class="card" style="border-top:3px solid var(--green);flex:1">
+        <h3>🔴 Redis</h3>
+        <p>Cache em RAM com TTL de 5 min. Stats acumulados via <code>HINCRBY</code>. Chaves por recurso e por ID.</p>
+        <div style="background:#f0fdf4;border-radius:8px;padding:10px 12px;margin-top:auto;font-size:13px;color:var(--muted)"><code>products:all</code> · <code>products:42</code> · <code>customers:all</code> · <code>orders:all</code></div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card" style="border-top:3px solid var(--amber);flex:1">
+        <h3>🐘 PostgreSQL</h3>
+        <p>Fonte de verdade. Consultado <strong>apenas em MISS</strong>. 3 entidades: <code>customers</code>, <code>products</code>, <code>orders + order_items</code>.</p>
+        <div style="background:#fefce8;border-radius:8px;padding:10px 12px;margin-top:auto;font-size:13px;color:var(--muted)">synchronize: false · migrations · bigint como string</div>
+      </div>
+      <div class="card" style="border-top:3px solid var(--blue);flex:1">
+        <h3>📊 Observabilidade</h3>
+        <p>Logs estruturados → Promtail → Loki → Grafana. Dashboard com taxa de HIT/MISS, invalidações e tempo de resposta em tempo real.</p>
+        <div style="background:#eff6ff;border-radius:8px;padding:10px 12px;margin-top:auto;font-size:13px;color:var(--muted)"><code>[CACHE HIT]</code> · <code>[CACHE MISS]</code> · <code>[CACHE INVALIDATE]</code></div>
+      </div>
+      <div class="card" style="border-top:3px solid var(--red);flex:1">
+        <h3>🧪 Qualidade e Carga</h3>
+        <p>Smoke test automatizado <strong>16/16</strong> rotas. Load test k6 com 200 VUs e 80 req/s. Seed: 100 clientes, 1.000 produtos, 20.000 pedidos.</p>
+        <div style="background:#fef2f2;border-radius:8px;padding:10px 12px;margin-top:auto;font-size:13px;color:var(--muted)"><code>make seed</code> · <code>make loadtest</code> · <code>./scripts/smoke-test.sh</code></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ S7 — DEMO ══════════════ -->
+<div class="slide" id="s7">
+  <div class="label">Demonstração</div>
+  <h2>Demo ao Vivo</h2>
+  <div class="two-col">
+    <div class="col">
+      <div class="card" style="flex:1;border-top:3px solid var(--purple)">
+        <h3>Roteiro da demo</h3>
+        <ul class="check-list" style="margin-top:10px">
+          <li>Listar produtos → <span class="badge b-miss">MISS</span> (1ª vez, banco consultado)</li>
+          <li>Listar novamente → <span class="badge b-hit">HIT</span> (Redis responde)</li>
+          <li>Criar produto → <span class="badge b-inv">INVALIDATE</span> (cache limpo)</li>
+          <li>Listar de novo → <span class="badge b-miss">MISS</span> (recarrega com novo produto)</li>
+          <li>Toggle cache OFF → <span class="badge b-dis">DISABLED</span></li>
+          <li>Stats em tempo real no painel (hits, misses, hit rate)</li>
+          <li>Grafana com logs em streaming</li>
+        </ul>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card" style="flex:1;border-top:3px solid var(--blue)">
+        <h3>Evidências visíveis</h3>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+          <div style="background:#f0fdf4;border-radius:8px;padding:12px 14px;display:flex;align-items:center;gap:12px">
+            <span class="badge b-hit" style="font-size:13px;padding:5px 14px">HIT</span>
+            <span style="font-size:13px;color:var(--muted)">Resposta da RAM. Banco não foi consultado. Toast verde no frontend.</span>
+          </div>
+          <div style="background:#fefce8;border-radius:8px;padding:12px 14px;display:flex;align-items:center;gap:12px">
+            <span class="badge b-miss" style="font-size:13px;padding:5px 14px">MISS</span>
+            <span style="font-size:13px;color:var(--muted)">PostgreSQL consultado, resultado cacheado. Toast amarelo.</span>
+          </div>
+          <div style="background:#fef2f2;border-radius:8px;padding:12px 14px;display:flex;align-items:center;gap:12px">
+            <span class="badge b-inv" style="font-size:13px;padding:5px 14px">INVALIDATE</span>
+            <span style="font-size:13px;color:var(--muted)">Chave removida após PUT/DELETE. Toast vermelho.</span>
+          </div>
+          <div style="background:#faf5ff;border-radius:8px;padding:12px 14px;display:flex;align-items:center;gap:12px">
+            <span class="badge b-dis" style="font-size:13px;padding:5px 14px">DISABLED</span>
+            <span style="font-size:13px;color:var(--muted)">Cache desligado via toggle. Todo request vai ao banco.</span>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="flex:0 0 auto;border-top:3px solid var(--green)">
+        <h3>URLs de acesso</h3>
+        <div style="display:flex;gap:10px;margin-top:10px">
+          <div style="flex:1;background:#f0fdf4;border-radius:8px;padding:12px;text-align:center">
+            <div style="font-size:14px;font-weight:700;color:var(--green);font-family:monospace">localhost:3000</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:3px">Frontend + API</div>
+          </div>
+          <div style="flex:1;background:#eff6ff;border-radius:8px;padding:12px;text-align:center">
+            <div style="font-size:14px;font-weight:700;color:var(--blue);font-family:monospace">localhost:3001</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:3px">Grafana · admin/admin</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ S7B — MICRO-BENCHMARK / TRADE-OFF DO MISS ══════════════ -->
+<div class="slide" id="s-bench">
+  <div class="label">Resultados — micro-benchmark · 150 requisições por cenário · página de 200 itens (~50 KB)</div>
+  <h2>O preço do MISS — e quando o cache compensa</h2>
+  <p style="margin-bottom:16px">Medindo um <strong>request por vez</strong> (mediana, sem concorrência): popular o cache custa caro na 1ª vez, mas cada leitura seguinte vem da RAM.</p>
+
+  <div style="display:flex;flex-direction:column;gap:11px;flex:1;justify-content:space-evenly">
+    <div style="display:flex;align-items:center;gap:16px;background:#fffbeb;border-radius:10px;padding:13px 18px">
+      <div style="width:215px;font-weight:700;font-size:15px;color:var(--text)">🟡 Cache MISS · 1ª req</div>
+      <div style="flex:1;background:#e2e8f0;border-radius:99px;height:22px;overflow:hidden"><div style="width:100%;height:100%;background:var(--amber);border-radius:99px"></div></div>
+      <div style="width:90px;text-align:right;font-size:17px;font-weight:800;color:var(--amber)">8,0 ms</div>
+      <div style="width:225px;text-align:right;font-size:13px;color:var(--muted)">consulta o banco <strong>e</strong> grava no Redis</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px;background:#faf5ff;border-radius:10px;padding:13px 18px">
+      <div style="width:215px;font-weight:700;font-size:15px;color:var(--text)">🟣 Invalidação · escrita</div>
+      <div style="flex:1;background:#e2e8f0;border-radius:99px;height:22px;overflow:hidden"><div style="width:82%;height:100%;background:var(--purple);border-radius:99px"></div></div>
+      <div style="width:90px;text-align:right;font-size:17px;font-weight:800;color:var(--purple)">6,6 ms</div>
+      <div style="width:225px;text-align:right;font-size:13px;color:var(--muted)">atualiza o banco <strong>e</strong> remove a chave</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px;background:#fef2f2;border-radius:10px;padding:13px 18px">
+      <div style="width:215px;font-weight:700;font-size:15px;color:var(--text)">🔴 SQL direto · sem cache</div>
+      <div style="flex:1;background:#e2e8f0;border-radius:99px;height:22px;overflow:hidden"><div style="width:74%;height:100%;background:var(--red);border-radius:99px"></div></div>
+      <div style="width:90px;text-align:right;font-size:17px;font-weight:800;color:var(--red)">5,9 ms</div>
+      <div style="width:225px;text-align:right;font-size:13px;color:var(--muted)">vai ao banco em <strong>toda</strong> requisição</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px;background:#f0fdf4;border-radius:10px;padding:13px 18px">
+      <div style="width:215px;font-weight:700;font-size:15px;color:var(--text)">🟢 Cache HIT · 2ª+ req</div>
+      <div style="flex:1;background:#e2e8f0;border-radius:99px;height:22px;overflow:hidden"><div style="width:46%;height:100%;background:var(--green);border-radius:99px"></div></div>
+      <div style="width:90px;text-align:right;font-size:17px;font-weight:800;color:var(--green)">3,7 ms</div>
+      <div style="width:225px;text-align:right;font-size:13px;color:var(--muted)">lê direto da RAM, <strong>sem</strong> banco</div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:16px;margin-top:16px">
+    <div style="flex:1.05;background:var(--surface);border-radius:12px;border:1px solid var(--border);padding:14px 18px">
+      <div style="font-size:12px;font-weight:700;color:var(--purple);letter-spacing:.5px;text-transform:uppercase;margin-bottom:8px">Custo acumulado — N leituras da mesma listagem</div>
+      <table style="font-size:13px">
+        <thead><tr><th>N</th><th>Sem cache</th><th>Com cache</th><th>Vencedor</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>5,9 ms</td><td>8,0 ms</td><td class="bad">sem cache</td></tr>
+          <tr><td>2</td><td>11,8 ms</td><td>11,7 ms</td><td class="good">cache ✓</td></tr>
+          <tr><td>3</td><td>17,7 ms</td><td>15,4 ms</td><td class="good">cache ✓</td></tr>
+          <tr><td>5</td><td>29,5 ms</td><td>22,8 ms</td><td class="good">cache ✓</td></tr>
+          <tr><td>10</td><td>59,0 ms</td><td>41,3 ms</td><td class="good">cache ✓</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="flex:1;background:linear-gradient(135deg,#faf5ff,#eff6ff);border-radius:12px;border-left:4px solid var(--purple);padding:16px 20px;display:flex;flex-direction:column;justify-content:center;gap:8px">
+      <div style="display:flex;align-items:center;gap:12px"><span style="font-size:26px">⚖️</span><strong style="font-size:15px;color:var(--text)">O trade-off do MISS</strong></div>
+      <p style="font-size:14px;line-height:1.55">O MISS custa <strong>~35% a mais</strong> que ir direto ao banco — é o preço de gravar o resultado no cache. Mas cada HIT seguinte é <strong>~37% mais rápido</strong> que a query. Já na <strong>2ª leitura idêntica</strong> o cache empata; da 3ª em diante, a economia só cresce.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ S8 — LATÊNCIA ══════════════ -->
+<div class="slide" id="s8">
+  <div class="label">Resultados — medido no stack atual (NestJS) · k6 · 3 min</div>
+  <h2>Onde o cache ganha: ele protege o banco</h2>
+  <div class="cards" style="margin-bottom:18px">
+    <div class="metric-big" style="border-color:#86efac">
+      <div class="metric-num" style="color:var(--green)">−90%</div>
+      <div class="metric-label">consultas ao banco<br>~12.200 → ~1.120<br><span style="font-size:12px">por run de 3 min</span></div>
+    </div>
+    <div class="metric-big" style="border-color:#c4b5fd">
+      <div class="metric-num" style="background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent">~90%</div>
+      <div class="metric-label">hit rate<br>~11.000 hits · ~1.120 misses<br><span style="font-size:12px">~590 invalidações</span></div>
+    </div>
+    <div class="metric-big" style="border-color:#93c5fd">
+      <div class="metric-num" style="color:var(--blue)">~10×</div>
+      <div class="metric-label">mais rápido por leitura<br>HIT ~1 ms vs banco ~10 ms<br><span style="font-size:12px">tempo no servidor</span></div>
+    </div>
+    <div class="metric-big" style="border-color:#fca5a5">
+      <div class="metric-num" style="color:var(--amber)">~1 ms</div>
+      <div class="metric-label">resposta do cache HIT<br>direto da RAM<br><span style="font-size:12px">sem tocar no banco</span></div>
+    </div>
+  </div>
+  <div style="background:var(--surface);border-radius:12px;border-left:4px solid var(--purple);padding:18px 22px;display:flex;gap:16px;align-items:center">
+    <span style="font-size:28px">🛡️</span>
+    <p>O ganho mais sólido e reprodutível do cache é <strong>tirar carga do banco</strong>: com ~90% de hit rate, 9 em cada 10 leituras nem chegam ao PostgreSQL. No servidor, uma leitura do cache custa <strong>~1 ms</strong> contra <strong>~10 ms</strong> indo ao banco — e essa folga vira tempo de fila economizado quando o tráfego cresce.</p>
+  </div>
+</div>
+
+<!-- ══════════════ S9 — THROUGHPUT ══════════════ -->
+<div class="slide" id="s9">
+  <div class="label">Resultados — latência ponta-a-ponta (k6) · medido no NestJS</div>
+  <h2>Latência: o cache rende quando o banco satura</h2>
+  <div style="display:flex;gap:16px;flex:1">
+
+    <div style="flex:1;background:var(--surface);border-radius:12px;border:2px solid var(--border);padding:24px;display:flex;flex-direction:column;justify-content:center;gap:18px">
+      <div style="text-align:center"><span class="badge b-dis" style="font-size:13px;padding:5px 14px">SEM SATURAÇÃO · ~68 req/s</span></div>
+      <div style="display:flex;gap:12px">
+        <div style="flex:1;background:#f0fdf4;border-radius:10px;padding:16px 14px;text-align:center">
+          <div style="font-size:38px;font-weight:900;color:var(--green)">2,5 ms</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">com cache</div>
+        </div>
+        <div style="flex:1;background:#fef2f2;border-radius:10px;padding:16px 14px;text-align:center">
+          <div style="font-size:38px;font-weight:900;color:var(--red)">3,2 ms</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">sem cache</div>
+        </div>
+      </div>
+      <p style="font-size:14px;line-height:1.6"><strong style="color:var(--text)">Empate técnico.</strong> O banco descontendido já responde em poucos ms, então o cache quase não muda a latência — mas já corta ~90% das consultas.</p>
+    </div>
+
+    <div style="flex:1;background:var(--surface);border-radius:12px;border:2px solid #c4b5fd;padding:24px;display:flex;flex-direction:column;justify-content:center;gap:18px">
+      <div style="text-align:center"><span class="badge b-inv" style="font-size:13px;padding:5px 14px">SOB SATURAÇÃO · ~230 req/s</span></div>
+      <div style="display:flex;gap:12px">
+        <div style="flex:1;background:#f0fdf4;border-radius:10px;padding:16px 14px;text-align:center">
+          <div style="font-size:38px;font-weight:900;color:var(--green)">~3 ms</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">com cache</div>
+        </div>
+        <div style="flex:1;background:#fef2f2;border-radius:10px;padding:16px 14px;text-align:center">
+          <div style="font-size:38px;font-weight:900;color:var(--red)">~76 ms</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">sem cache</div>
+        </div>
+      </div>
+      <p style="font-size:14px;line-height:1.6"><strong style="color:var(--text)">Aí o cache brilha.</strong> Com o banco no limite, cada query enfrenta fila. O cache desvia 9 em 10 leituras e a <strong>mediana despenca ~25×</strong>.</p>
+    </div>
+
+  </div>
+  <div style="background:var(--surface);border-radius:12px;border-left:4px solid var(--purple);padding:16px 22px;margin-top:16px;display:flex;gap:16px;align-items:center">
+    <span style="font-size:28px">⚖️</span>
+    <p>O valor do cache é <strong>proporcional à pressão sobre o banco</strong>. Ele não multiplica a vazão — o throughput fica praticamente igual (±7%) nos dois casos. O que ele faz é <strong>proteger o banco e estabilizar a latência</strong> justamente quando o tráfego aperta.</p>
+  </div>
+</div>
+
+<!-- ══════════════ S10 — TRADE-OFFS ══════════════ -->
+<div class="slide" id="s10">
+  <div class="label">Análise Arquitetural</div>
+  <h2>Trade-offs e Consistência</h2>
+  <div class="two-col">
+    <div class="col">
+      <div class="tradeoff" style="flex:1">
+        <h4>⏰ Consistência Eventual (TTL)</h4>
+        <p style="font-size:14px">Com TTL de 5 min, usuários podem ver dados levemente desatualizados até o cache expirar. <strong>Mitigação:</strong> invalidação explícita em toda escrita garante consistência pós-PUT/DELETE.</p>
+      </div>
+      <div class="tradeoff" style="border-left-color:var(--green);flex:1">
+        <h4>🗑️ Invalidação Explícita</h4>
+        <p style="font-size:14px">Todo PUT/DELETE chama <code>CacheService.invalidate()</code>. A chave é removida imediatamente — sem esperar o TTL. Próxima leitura recarrega o dado atualizado.</p>
+      </div>
+      <div class="tradeoff" style="border-left-color:var(--amber);flex:1">
+        <h4>❄️ Cold Start</h4>
+        <p style="font-size:14px">Na inicialização ou após reset, o cache está vazio. As primeiras requisições são sempre MISS e mais lentas. Em produção: warm-up prévio ou cache persistente.</p>
+      </div>
+    </div>
+    <div class="col">
+      <div class="tradeoff" style="border-left-color:var(--red);flex:1">
+        <h4>🌊 Cache Stampede</h4>
+        <p style="font-size:14px">Se muitas requisições chegam exatamente quando uma chave expira, todas vão ao banco simultaneamente. Mitigação: TTL com jitter aleatório, ou lock de recomputação (mutex).</p>
+      </div>
+      <div class="tradeoff" style="border-left-color:var(--blue);flex:1">
+        <h4>🔄 Quando NÃO usar Cache Aside</h4>
+        <p style="font-size:14px">Dados com consistência forte obrigatória (saldo bancário, estoque crítico). Nesses casos: <strong>write-through</strong> ou <strong>read-through</strong> são mais adequados.</p>
+      </div>
+      <div class="tradeoff" style="border-left-color:var(--purple);flex:1">
+        <h4>💡 Degradação Graciosa</h4>
+        <p style="font-size:14px">Se o Redis cair, o <code>CacheService</code> captura o erro e passa direto ao banco com status <code>ERROR</code>. O sistema <strong>não para</strong> — degrada para o comportamento sem cache.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ S11 — GRAFANA ══════════════ -->
+<div class="slide" id="s11">
+  <div class="label">Observabilidade</div>
+  <h2>Grafana em Tempo Real</h2>
+  <div class="two-col">
+    <div class="col">
+      <div class="card" style="flex:1;border-top:3px solid var(--purple)">
+        <h3>Pipeline de logs</h3>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
+          <div style="background:#faf5ff;border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:10px">
+            <span style="font-size:18px">⚡</span>
+            <div><div style="font-size:13px;font-weight:700;color:var(--text)">NestJS Logger</div><div style="font-size:12px;color:var(--muted)">Escreve em arquivo + stdout</div></div>
+          </div>
+          <div style="text-align:center;font-size:18px;color:var(--purple)">↓</div>
+          <div style="background:#eff6ff;border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:10px">
+            <span style="font-size:18px">📡</span>
+            <div><div style="font-size:13px;font-weight:700;color:var(--text)">Promtail</div><div style="font-size:12px;color:var(--muted)">Parseia tags: HIT / MISS / INVALIDATE</div></div>
+          </div>
+          <div style="text-align:center;font-size:18px;color:var(--purple)">↓</div>
+          <div style="background:#f0fdf4;border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:10px">
+            <span style="font-size:18px">🗄️</span>
+            <div><div style="font-size:13px;font-weight:700;color:var(--text)">Loki</div><div style="font-size:12px;color:var(--muted)">Armazenamento e indexação de logs</div></div>
+          </div>
+          <div style="text-align:center;font-size:18px;color:var(--purple)">↓</div>
+          <div style="background:#fef3c7;border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:10px">
+            <span style="font-size:18px">📊</span>
+            <div><div style="font-size:13px;font-weight:700;color:var(--text)">Grafana Dashboard</div><div style="font-size:12px;color:var(--muted)">Visualização em tempo real</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card" style="flex:1;border-top:3px solid var(--blue)">
+        <h3>O que o dashboard mostra</h3>
+        <ul class="check-list" style="margin-top:10px">
+          <li>Taxa de CACHE HIT e MISS ao longo do tempo</li>
+          <li>Volume de INVALIDATIONs por minuto</li>
+          <li>Frequência total de requisições</li>
+          <li>Tempo de resposta por endpoint</li>
+          <li>Logs brutos filtráveis em tempo real</li>
+        </ul>
+      </div>
+      <div class="card" style="flex:0 0 auto;border-top:3px solid var(--green)">
+        <h3>Stats via API</h3>
+        <div class="code-wrap" style="padding:14px;margin-top:8px">
+<pre style="font-size:12px">{
+  <span class="str">"hits"</span>:         <span class="kw">11029</span>,
+  <span class="str">"misses"</span>:       <span class="kw">1113</span>,
+  <span class="str">"hit_rate"</span>:     <span class="kw">90.83</span>,
+  <span class="str">"invalidations"</span>:<span class="kw">587</span>,
+  <span class="str">"db_queries"</span>:   <span class="kw">1113</span>
+}</pre>
+        </div>
+        <p style="font-size:13px;margin-top:8px">Contadores acumulados no próprio Redis via <code>HINCRBY</code>. Atualizados a cada 2s no frontend.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ S12 — CONCLUSÃO ══════════════ -->
+<div class="slide" id="s12">
+  <div class="label">Conclusão</div>
+  <h2>O que aprendemos</h2>
+  <div style="display:flex;gap:24px;flex:1">
+    <div style="flex:1.3;display:flex;flex-direction:column">
+      <ul class="check-list" style="flex:1;justify-content:space-between;display:flex;flex-direction:column;list-style:none;padding:0">
+        <li style="display:flex;align-items:flex-start;gap:10px;background:#fff;border-radius:10px;padding:13px 16px;border-left:4px solid var(--purple)"><span style="color:var(--purple);font-weight:900;font-size:16px;flex-shrink:0;margin-top:1px">✓</span><span style="font-size:16px;line-height:1.5">Cache-aside <strong>não é só otimização</strong> — é uma decisão arquitetural com implicações de consistência, complexidade e operação</span></li>
+        <li style="display:flex;align-items:flex-start;gap:10px;background:#fff;border-radius:10px;padding:13px 16px;border-left:4px solid var(--blue)"><span style="color:var(--purple);font-weight:900;font-size:16px;flex-shrink:0;margin-top:1px">✓</span><span style="font-size:16px;line-height:1.5">A diferença entre RAM e disco — <strong>100.000× mais lenta</strong> — é a razão fundamental pela qual o cache funciona</span></li>
+        <li style="display:flex;align-items:flex-start;gap:10px;background:#fff;border-radius:10px;padding:13px 16px;border-left:4px solid var(--green)"><span style="color:var(--purple);font-weight:900;font-size:16px;flex-shrink:0;margin-top:1px">✓</span><span style="font-size:16px;line-height:1.5">Medido no nosso stack: <strong>−90% de consultas ao banco</strong> e leitura do cache em <strong>~1 ms</strong> (vs ~10 ms no banco), com a mesma infraestrutura</span></li>
+        <li style="display:flex;align-items:flex-start;gap:10px;background:#fff;border-radius:10px;padding:13px 16px;border-left:4px solid var(--amber)"><span style="color:var(--purple);font-weight:900;font-size:16px;flex-shrink:0;margin-top:1px">✓</span><span style="font-size:16px;line-height:1.5">O ganho de latência é <strong>proporcional à pressão sobre o banco</strong>: aparece sob carga, quando o banco vira gargalo — e não com o banco ocioso</span></li>
+        <li style="display:flex;align-items:flex-start;gap:10px;background:#fff;border-radius:10px;padding:13px 16px;border-left:4px solid var(--red)"><span style="color:var(--purple);font-weight:900;font-size:16px;flex-shrink:0;margin-top:1px">✓</span><span style="font-size:16px;line-height:1.5">Invalidação explícita é fundamental para <strong>consistência pós-escrita</strong> — sem ela, dados desatualizados comprometem a API</span></li>
+        <li style="display:flex;align-items:flex-start;gap:10px;background:#fff;border-radius:10px;padding:13px 16px;border-left:4px solid var(--purple)"><span style="color:var(--purple);font-weight:900;font-size:16px;flex-shrink:0;margin-top:1px">✓</span><span style="font-size:16px;line-height:1.5">Observabilidade com Grafana + Loki permite ver HIT/MISS/INVALIDATE em produção em tempo real</span></li>
+      </ul>
+    </div>
+    <div style="flex:1;display:flex;flex-direction:column;gap:12px">
+      <div style="background:linear-gradient(135deg,#faf5ff,#eff6ff);border-radius:14px;padding:20px;text-align:center;border:2px solid #c4b5fd;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center">
+        <div style="font-size:52px;font-weight:900;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent">−90%</div>
+        <div style="color:var(--muted);font-size:14px;margin-top:4px">consultas ao banco</div>
+      </div>
+      <div style="background:linear-gradient(135deg,#f0fdf4,#eff6ff);border-radius:14px;padding:20px;text-align:center;border:2px solid #86efac;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center">
+        <div style="font-size:52px;font-weight:900;color:var(--green)">~90%</div>
+        <div style="color:var(--muted);font-size:14px;margin-top:4px">hit rate</div>
+      </div>
+      <div style="background:linear-gradient(135deg,#fff7ed,#fef2f2);border-radius:14px;padding:20px;text-align:center;border:2px solid #fca5a5;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center">
+        <div style="font-size:52px;font-weight:900;color:var(--amber)">~1 ms</div>
+        <div style="color:var(--muted);font-size:14px;margin-top:4px">resposta do cache HIT</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ S13 — FIM ══════════════ -->
+<div class="slide" id="s13" style="padding:0;overflow:hidden">
+  <div style="display:flex;height:100%">
+    <!-- Left: dark gradient with key metrics -->
+    <div style="flex:1;background:linear-gradient(160deg,#1e1b4b,#312e81,#1d4ed8);display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;overflow:hidden;gap:28px">
+      <div style="position:absolute;width:500px;height:500px;background:radial-gradient(circle,rgba(124,58,237,.4),transparent 70%);top:-100px;left:-100px;border-radius:50%"></div>
+      <div style="position:absolute;width:400px;height:400px;background:radial-gradient(circle,rgba(37,99,235,.3),transparent 70%);bottom:-80px;right:-80px;border-radius:50%"></div>
+      <div style="text-align:center;z-index:2">
+        <div style="font-size:64px;margin-bottom:10px">🔴</div>
+        <div style="font-size:40px;font-weight:900;color:white;line-height:1.1;margin-bottom:8px">Cache Aside</div>
+        <div style="font-size:16px;color:rgba(255,255,255,.65)">Menos banco · Menos latência · Mais escala</div>
+      </div>
+      <div style="display:flex;gap:14px;z-index:2">
+        <div style="background:rgba(255,255,255,.1);border-radius:12px;padding:14px 18px;text-align:center;backdrop-filter:blur(4px)">
+          <div style="font-size:30px;font-weight:900;color:#4ade80">−90%</div>
+          <div style="font-size:11px;color:rgba(255,255,255,.6);margin-top:2px">carga no banco</div>
+        </div>
+        <div style="background:rgba(255,255,255,.1);border-radius:12px;padding:14px 18px;text-align:center;backdrop-filter:blur(4px)">
+          <div style="font-size:30px;font-weight:900;color:#a78bfa">~90%</div>
+          <div style="font-size:11px;color:rgba(255,255,255,.6);margin-top:2px">hit rate</div>
+        </div>
+        <div style="background:rgba(255,255,255,.1);border-radius:12px;padding:14px 18px;text-align:center;backdrop-filter:blur(4px)">
+          <div style="font-size:30px;font-weight:900;color:#fbbf24">~1 ms</div>
+          <div style="font-size:11px;color:rgba(255,255,255,.6);margin-top:2px">cache HIT</div>
+        </div>
+      </div>
+    </div>
+    <!-- Right: white panel -->
+    <div style="flex:1;display:flex;flex-direction:column;padding:52px 50px;gap:20px;background:#fff">
+      <div>
+        <div style="font-size:11px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--purple);margin-bottom:10px">Obrigado!</div>
+        <div style="font-size:48px;font-weight:900;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1">Perguntas?</div>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:16px;justify-content:center">
+        <div style="background:#f0fdf4;border-radius:12px;border-left:4px solid var(--green);padding:18px 22px">
+          <div style="font-size:12px;font-weight:700;color:var(--green);letter-spacing:1px;text-transform:uppercase">Frontend + API</div>
+          <div style="font-size:20px;font-family:monospace;font-weight:700;color:var(--text);margin-top:4px">localhost:3000</div>
+        </div>
+        <div style="background:#eff6ff;border-radius:12px;border-left:4px solid var(--blue);padding:18px 22px">
+          <div style="font-size:12px;font-weight:700;color:var(--blue);letter-spacing:1px;text-transform:uppercase">Grafana Dashboard</div>
+          <div style="font-size:20px;font-family:monospace;font-weight:700;color:var(--text);margin-top:4px">localhost:3001 · admin/admin</div>
+        </div>
+        <div style="background:linear-gradient(135deg,#faf5ff,#eff6ff);border-radius:12px;border:1px solid #c4b5fd;padding:18px 22px;display:flex;align-items:center;gap:14px">
+          <span style="font-size:28px">🏆</span>
+          <div>
+            <div style="font-size:13px;font-weight:700;color:var(--purple)">Resultado do trabalho</div>
+            <div style="font-size:14px;color:var(--muted);margin-top:3px">−90% carga no banco · ~90% hit rate · cache HIT em ~1 ms</div>
+          </div>
+        </div>
+        <div style="font-size:13px;color:var(--muted);text-align:center;padding-top:4px">
+          NestJS + Fastify · Redis · PostgreSQL · Grafana · Loki · k6
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /deck -->
+
+<div class="nav">
+  <button id="btnPrev" onclick="go(-1)" disabled>←</button>
+  <span id="counter">1 / 14</span>
+  <button id="btnNext" onclick="go(1)">→</button>
+</div>
+
+<script>
+const slides=document.querySelectorAll('.slide');
+const total=slides.length;
+let cur=0;
+function go(d){
+  slides[cur].classList.remove('active');
+  cur=Math.max(0,Math.min(total-1,cur+d));
+  slides[cur].classList.add('active');
+  document.getElementById('counter').textContent=`${cur+1} / ${total}`;
+  document.getElementById('btnPrev').disabled=cur===0;
+  document.getElementById('btnNext').disabled=cur===total-1;
+  document.getElementById('progress').style.width=`${((cur+1)/total)*100}%`;
+}
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'||e.key===' ')go(1);
+  if(e.key==='ArrowLeft')go(-1);
+});
+document.getElementById('progress').style.width=`${(1/total)*100}%`;
+</script>
+</body>
+</html>
